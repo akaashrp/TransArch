@@ -1,0 +1,7 @@
+# Separate from upstream's legacy vLLM serving environment.
+# CPU numerical conversion tests use this Transformers API range.
+torch>=2.8,<3
+transformers>=4.56,<4.58
+datasets>=4.4,<5
+safetensors>=0.6
+pytest>=8

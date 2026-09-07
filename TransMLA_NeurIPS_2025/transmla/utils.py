@@ -219,10 +219,9 @@ def evaluate_ppl(
 
     model.eval()
 
-    if pad_token_id:
-        loss_fn = torch.nn.CrossEntropyLoss(reduction="none", ignore_index=pad_token_id)
-    else:
-        loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
+    # Padding is a position property. In these models pad can equal EOS, and
+    # genuine EOS tokens must still contribute to perplexity.
+    loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
 
     nlls = []
 
@@ -230,7 +229,7 @@ def evaluate_ppl(
     for batch in tqdm(testloader, desc=message):
         logging.debug(f"Evaluating batch {len(nlls)}")
         batch = map_tensors(batch, model.model.embed_tokens.weight.device)
-        logits = model(**batch, use_cache=False).logits
+        logits = model(**{k: v for k, v in batch.items() if k != "labels"}, use_cache=False).logits
 
         # shift outputs and labels autoregressively.
         logits = logits[:, :-1, :]
@@ -239,12 +238,13 @@ def evaluate_ppl(
         # CrossEntropyLoss demands data dimension is dimension 1.
         nll = loss_fn(logits.permute(0, 2, 1), shift_labels).float()
 
-        mask = shift_labels != loss_fn.ignore_index
-        nll_means = (nll * mask).sum(dim=1) / mask.sum(dim=1)
-        nlls.append(nll_means)
+        mask = batch.get("attention_mask", torch.ones_like(batch["input_ids"]))
+        mask = mask[:, 1:].bool() & mask[:, :-1].bool()
+        nlls.append(((nll * mask).sum(), mask.sum()))
 
-    nlls_tensor = torch.cat(nlls)
-    ppl = torch.exp(nlls_tensor.mean())
+    if not nlls or sum(int(count) for _, count in nlls) == 0:
+        raise ValueError("Perplexity data contains no valid next-token targets")
+    ppl = torch.exp(sum(loss for loss, _ in nlls) / sum(count for _, count in nlls))
 
     sync_gpus()
 
@@ -271,34 +271,38 @@ def insert_qkv_hooks(model):
     def query_hook_fn(module, input, output, index):
         if index not in query_outputs:
             query_outputs[index] = []
-        query_outputs[index].append(output.to('cpu'))
+        query_outputs[index].append(output.detach().reshape(*output.shape[:2], -1).cpu().clone())
 
     def key_hook_fn(module, input, output, index):
         if index not in key_outputs:
             key_outputs[index] = []
-        key_outputs[index].append(output.to('cpu'))
+        key_outputs[index].append(output.detach().reshape(*output.shape[:2], -1).cpu().clone())
         
     def value_hook_fn(module, input, output, index):
         if index not in value_outputs:
             value_outputs[index] = []
-        value_outputs[index].append(output.to('cpu'))
+        value_outputs[index].append(output.detach().cpu().clone())
 
     def q_a_proj_hook_fn(module, input, output, index):
         if index not in q_a_proj_outputs:
             q_a_proj_outputs[index] = []
-        q_a_proj_outputs[index].append(output.to('cpu'))
+        q_a_proj_outputs[index].append(output.detach().cpu().clone())
 
     def kv_a_proj_with_mqa_hook_fn(module, input, output, index):
         if index not in kv_a_proj_with_mqa_outputs:
             kv_a_proj_with_mqa_outputs[index] = []
-        kv_a_proj_with_mqa_outputs[index].append(output.to('cpu'))
+        kv_a_proj_with_mqa_outputs[index].append(output.detach().cpu().clone())
 
     for idx, layer in enumerate(model.model.layers):
         if hasattr(layer.self_attn, "q_proj"):
-            query_hook = layer.self_attn.q_proj.register_forward_hook(lambda module, input, output, idx=idx: query_hook_fn(module, input, output, idx))
+            query_module = getattr(layer.self_attn, "q_norm", layer.self_attn.q_proj)
+            query_hook = query_module.register_forward_hook(lambda module, input, output, idx=idx: query_hook_fn(module, input, output, idx))
             query_hooks.append(query_hook)
         if hasattr(layer.self_attn, "k_proj"):
-            key_hook = layer.self_attn.k_proj.register_forward_hook(lambda module, input, output, idx=idx: key_hook_fn(module, input, output, idx))
+            # Qwen3 calibration observes normalized keys. After RoRoPE it
+            # observes the rotated, normalized keys from k_proj instead.
+            key_module = layer.self_attn.k_proj if hasattr(layer.self_attn, "k_input_proj") else getattr(layer.self_attn, "k_norm", layer.self_attn.k_proj)
+            key_hook = key_module.register_forward_hook(lambda module, input, output, idx=idx: key_hook_fn(module, input, output, idx))
             key_hooks.append(key_hook)
         if hasattr(layer.self_attn, "v_proj"):
             value_hook = layer.self_attn.v_proj.register_forward_hook(lambda module, input, output, idx=idx: value_hook_fn(module, input, output, idx))
@@ -328,27 +332,20 @@ def get_qkv_calibrate_outputs(
     query_hooks, key_hooks, value_hooks, q_a_proj_hooks, kv_a_proj_with_mqa_hooks, query_outputs, key_outputs, value_outputs, q_a_proj_outputs, kv_a_proj_with_mqa_outputs = insert_qkv_hooks(model)
     ignore_masks = []
     logging.info(message)
-    for batch in tqdm(trainloader, desc=message):
-        batch = map_tensors(batch, model.model.embed_tokens.weight.device)
-        ignore_masks.append(batch["attention_mask"].to('cpu'))
-        model(**batch, use_cache=False)
+    try:
+        for batch in tqdm(trainloader, desc=message):
+            batch = map_tensors(batch, model.model.embed_tokens.weight.device)
+            ignore_masks.append(batch["attention_mask"].to('cpu'))
+            model(**{k: v for k, v in batch.items() if k != "labels"}, use_cache=False)
+    finally:
+        for hook in query_hooks + key_hooks + value_hooks + q_a_proj_hooks + kv_a_proj_with_mqa_hooks:
+            hook.remove()
 
     elapsed = time.time() - start_time
     logging.info(
         "Time spent on evaluation: %s",
         time.strftime("%H:%M:%S.{}".format(str(elapsed % 1)[2:])[:13], time.gmtime(elapsed)),
     )
-
-    for hook in query_hooks:
-        hook.remove()
-    for hook in key_hooks:
-        hook.remove()
-    for hook in value_hooks:
-        hook.remove()
-    for hook in q_a_proj_hooks:
-        hook.remove()
-    for hook in kv_a_proj_with_mqa_hooks:
-        hook.remove()
 
     for value in query_outputs.values():
         for idx, X_batch in enumerate(value):
@@ -393,6 +390,8 @@ def pca_calc(X: list[torch.Tensor], device: str) -> torch.Tensor:
         H_batch = torch.sum(X_batch.mT @ X_batch, dim=0)  # sum over the batch dimension.
         H = H_batch if H is None else H + H_batch
 
+    if H is None or not torch.isfinite(H).all():
+        raise ValueError("PCA requires nonempty, finite calibration activations")
     damp = 0.01 * torch.mean(torch.diag(H))
     diag = torch.arange(H.shape[-1]).to(device)
     H[diag, diag] = H[diag, diag] + damp

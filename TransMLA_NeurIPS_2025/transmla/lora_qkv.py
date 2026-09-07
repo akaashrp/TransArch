@@ -5,7 +5,10 @@ from typing import Optional, Tuple
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 from transformers.models.deepseek_v3.modeling_deepseek_v3 import apply_rotary_pos_emb_interleave
 
-from utils import pca_calc, get_qkv_calibrate_outputs, evaluate_ppl, statistics_qkv_rmsnorm
+try:
+    from .utils import pca_calc, get_qkv_calibrate_outputs, evaluate_ppl, statistics_qkv_rmsnorm
+except ImportError:
+    from utils import pca_calc, get_qkv_calibrate_outputs, evaluate_ppl, statistics_qkv_rmsnorm
 
  
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -50,6 +53,8 @@ class LoraQKV(nn.Module):
         assert self.kv_lora_rank <= 2 * self.latent_dim - self.qk_mqa_dim, f"kv_lora_rank ({self.kv_lora_rank}) must be less than 2 * latent_dim ({self.latent_dim}) - qk_mqa_dim ({self.qk_mqa_dim})"
 
         self.attention_function = ALL_ATTENTION_FUNCTIONS["sdpa"]
+        self.is_causal = True
+        self.num_key_value_groups = 1
         self.scaling = (self.head_dim + self.qk_mqa_dim)**(-0.5)
 
         # -----------------Attributes for the bias-----------------
@@ -109,7 +114,10 @@ class LoraQKV(nn.Module):
         # -----------------apply bkv on the key and value outputs-----------------
         if balance_kv_ratio is not None:
             k_outputs_norm = torch.cat([key.reshape(-1, self.latent_dim)[:,self.qk_mqa_dim:] for key in key_outputs]).norm(p=2,dim=0).mean()
-            v_outputs_norm = torch.cat([value.reshape(-1, self.latent_dim)[:,self.qk_mqa_dim:] for value in value_outputs]).norm(p=2,dim=0).mean()
+            # Only keys have a separate RoPE component; all value channels enter PCA.
+            v_outputs_norm = torch.cat([value.reshape(-1, self.latent_dim) for value in value_outputs]).norm(p=2,dim=0).mean()
+            if not torch.isfinite(k_outputs_norm + v_outputs_norm) or min(k_outputs_norm, v_outputs_norm) <= 0:
+                raise ValueError("KV balancing requires finite, nonzero calibration activations")
             ratio = k_outputs_norm / (v_outputs_norm * balance_kv_ratio)
             self_attn.k_proj.weight.data[self.qk_mqa_dim:] /= ratio
             if self.attention_bias:
@@ -227,8 +235,12 @@ class LoraQKV(nn.Module):
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        past_key_values=None,
+        **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         bsz, q_len, _ = hidden_states.size()
+        if past_key_value is not None or past_key_values is not None:
+            raise ValueError("LoraQKV is a conversion intermediate; export before cached generation")
 
         # query
         if self.q_lora_rank is not None:

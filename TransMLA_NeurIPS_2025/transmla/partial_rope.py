@@ -4,7 +4,10 @@ from copy import deepcopy
 from typing import Optional, Tuple
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
-from utils import get_qkv_calibrate_outputs, evaluate_ppl
+try:
+    from .utils import get_qkv_calibrate_outputs, evaluate_ppl
+except ImportError:  # upstream's python transmla/converter.py entry point
+    from utils import get_qkv_calibrate_outputs, evaluate_ppl
 
 def rotate_half(x, group):
     rotate_x = []
@@ -59,6 +62,8 @@ class PartialRope(nn.Module):
         self.collapse = collapse
         self.scaling = self.head_dim**(-0.5)
         self.attention_function = ALL_ATTENTION_FUNCTIONS["sdpa"]
+        self.is_causal = True
+        self.num_key_value_groups = 1  # both K and V are expanded before SDPA
         assert freqfold % self.collapse == 0, f"freqfold ({freqfold}) must be divisible by collapse ({self.collapse})"
 
         self.q_proj = self_attn.q_proj
@@ -72,8 +77,9 @@ class PartialRope(nn.Module):
             self.rotate_k_up_proj(Rk, freqfold=freqfold)
             
     def _insert_kv_up_proj(self):
-        self.k_up_proj = nn.Linear(self.latent_dim, self.hidden_size, bias=False, dtype=self.k_proj.weight.dtype, device=self.k_proj.weight.device)
-        self.v_up_proj = nn.Linear(self.latent_dim, self.hidden_size, bias=False, dtype=self.v_proj.weight.dtype, device=self.v_proj.weight.device)
+        query_width = self.num_attention_heads * self.head_dim
+        self.k_up_proj = nn.Linear(self.latent_dim, query_width, bias=False, dtype=self.k_proj.weight.dtype, device=self.k_proj.weight.device)
+        self.v_up_proj = nn.Linear(self.latent_dim, query_width, bias=False, dtype=self.v_proj.weight.dtype, device=self.v_proj.weight.device)
         kv_groups = self.num_attention_heads // self.num_key_value_heads
         k_up_eye = torch.eye(self.latent_dim, dtype=self.k_proj.weight.dtype, device=self.k_proj.weight.device)
         v_up_eye = torch.eye(self.latent_dim, dtype=self.v_proj.weight.dtype, device=self.v_proj.weight.device)
@@ -124,7 +130,7 @@ class PartialRope(nn.Module):
             k_weight = k_weight[:, :, :-1]
 
             self.k_proj.bias.data = k_bias.flatten().contiguous()
-        self.k_proj.weight.data = k_weight.reshape(self.latent_dim, self.hidden_size).contiguous()
+        self.k_proj.weight.data = k_weight.reshape(self.latent_dim, -1).contiguous()
         
     def rotate_k_up_proj(self, U, freqfold=1):
         k_up_weight = deepcopy(self.k_up_proj.weight.data)
@@ -139,6 +145,9 @@ class PartialRope(nn.Module):
 
         self.k_up_proj.weight.data = k_up_weight.contiguous()
   
+    def project_qkv(self, hidden_states):
+        return self.q_proj(hidden_states), self.k_proj(hidden_states), self.v_proj(hidden_states)
+
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -149,12 +158,13 @@ class PartialRope(nn.Module):
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        past_key_values=None,
+        **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         bsz, q_len, _ = hidden_states.size()
 
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
+        query_states, key_states, value_states = self.project_qkv(hidden_states)
+        past_key_value = past_key_values if past_key_values is not None else past_key_value
 
         query_states = query_states.view(bsz, q_len, self.num_attention_heads, self.head_dim)
         k_up_weight = self.k_up_proj.weight.view(self.num_attention_heads, self.head_dim, self.latent_dim)
@@ -175,6 +185,9 @@ class PartialRope(nn.Module):
         value_states = value_states.reshape(bsz, self.num_attention_heads, -1, self.head_dim)
 
         
+        # Values have already been expanded to query heads. Expand keys as well
+        # rather than letting the HF SDPA adapter repeat the values a second time.
+        key_states = key_states.expand(-1, self.num_attention_heads, -1, -1)
         attn_output, attn_weights = self.attention_function(
             self,
             query_states,

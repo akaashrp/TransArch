@@ -1,5 +1,9 @@
 # 🚀 TransMLA: Migrating GQA Models to MLA with Full DeepSeek Compatibility and Speedup
 
+This branch adds [Qwen3-4B and MiMo-7B-RL conversion support](docs/PRETRAINED_CONVERSION.md),
+including a portable Transformers export and CPU numerical checks. Qwen3 uses
+a norm-preserving adaptation; see the linked implementation notes before use.
+
 Modern large-language models often face communication bottlenecks on current hardware rather than computational limitations. Multi-head latent attention (MLA) addresses this by compressing the key-value cache using low-rank matrices, while the Absorb operation prevents the KV cache from reverting to its original size, significantly boosting both training and inference speed. 
 
 Despite the success of DeepSeek V2/V3/R1, most model vendors have heavily invested in optimizing GQA-based models and therefore lack strong incentives to retrain MLA-based models from scratch. In this paper, we introduce TransMLA, a framework that seamlessly converts any GQA-based pre-trained model (e.g., LLaMA, Qwen, Mixtral) into an MLA-based model. 
