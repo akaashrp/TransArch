@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/arianraje/Linearization",
+  "commit": "4f59436c2438f8d339183c19bbcd953ea0b598b6",
+  "path": "src/eval/reasoning_bench.py",
+  "source_sha256": "5600ce5cc3355a6b85fad23e3d71f39e3f986dfefb8dee951550f7b4f9d75246",
+  "extracted_names": [
+    "DEFAULT_RULER_TASKS",
+    "KEY_POOL",
+    "MATH_INSTRUCTION",
+    "MATH_TASKS",
+    "NOISE",
+    "RULER_GEN_TOKENS",
+    "RULER_TASKS",
+    "_ADJS",
+    "_NOUNS",
+    "_pack",
+    "derive_niah_answer_prefill",
+    "make_ruler_item",
+    "score_math",
+    "score_ruler_item"
+  ],
+  "extraction": "AST source spans, unchanged; execution layer implemented separately"
+}

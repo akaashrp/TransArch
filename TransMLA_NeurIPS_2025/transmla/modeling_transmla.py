@@ -10,7 +10,9 @@ from torch import nn
 from torch.nn import functional as F
 from transformers import Qwen3Config
 from transformers.cache_utils import DynamicCache
-from transformers.models.qwen3.modeling_qwen3 import Qwen3ForCausalLM, Qwen3RMSNorm
+from transformers.models.qwen3.modeling_qwen3 import (
+    Qwen3ForCausalLM, Qwen3Model, Qwen3PreTrainedModel, Qwen3RMSNorm,
+)
 
 
 class TransMLAConfig(Qwen3Config):
@@ -18,7 +20,9 @@ class TransMLAConfig(Qwen3Config):
 
     def __init__(self, kv_lora_rank=512, qk_mqa_dim=64, q_lora_rank=None,
                  qk_norm_preserved=True, qk_latent_layernorm=False,
-                 source_model_type="qwen3", o_proj_bias=False, **kwargs):
+                 source_model_type="qwen3", o_proj_bias=False,
+                 mla_query_chunk_size=64, mla_score_budget_mb=128,
+                 mla_prefill_backend="auto", **kwargs):
         super().__init__(**kwargs)
         self.kv_lora_rank = kv_lora_rank
         self.qk_mqa_dim = qk_mqa_dim
@@ -27,6 +31,13 @@ class TransMLAConfig(Qwen3Config):
         self.qk_latent_layernorm = qk_latent_layernorm
         self.source_model_type = source_model_type
         self.o_proj_bias = o_proj_bias
+        self.mla_query_chunk_size = mla_query_chunk_size
+        self.mla_score_budget_mb = mla_score_budget_mb
+        self.mla_prefill_backend = mla_prefill_backend
+        if mla_query_chunk_size <= 0 or mla_score_budget_mb <= 0:
+            raise ValueError("MLA attention chunk size and score budget must be positive")
+        if mla_prefill_backend not in ("auto", "chunked"):
+            raise ValueError("mla_prefill_backend must be auto or chunked")
         if qk_mqa_dim <= 0 or self.head_dim % qk_mqa_dim or qk_mqa_dim % 2:
             raise ValueError("qk_mqa_dim must be even and divide head_dim")
         self.collapse = self.head_dim // qk_mqa_dim
@@ -132,34 +143,103 @@ class TransMLAAttention(nn.Module):
             # DynamicCache's two slots store latent KV and RoPE K, respectively.
             latent, k_rope = cache.update(latent, k_rope, self.layer_idx)
         key_up, value_up = self.kv_b_proj.weight.view(self.num_heads, 2 * self.head_dim, self.rank).split(self.head_dim, 1)
+        # Prefill may reconstruct temporary per-head K/V for FlashAttention;
+        # only the compressed latent and RoPE key above are retained in cache.
+        output = self._flash_prefill(q_nope, q_rope, latent, k_rope, key_up, value_up,
+                                     attention_mask, output_attentions)
+        if output is not None:
+            return self.o_proj(output.transpose(1, 2).flatten(-2)), None
         q_latent = torch.einsum("bhtd,hdr->bhtr", q_nope, key_up)
         query = torch.cat((q_latent, q_rope), -1)
         key = torch.cat((latent, k_rope), -1)
         q_len, k_len = query.shape[-2], key.shape[-2]
-        if attention_mask is None:
-            positions = cache_position if cache_position is not None else torch.arange(k_len - q_len, k_len, device=query.device)
-            attention_mask = torch.arange(k_len, device=query.device)[None, :] <= positions[:, None]
-        else:
-            attention_mask = attention_mask[..., :k_len]
-        weights = None
-        if self.config._attn_implementation == "eager" or output_attentions:
-            scores = (query @ key.transpose(-1, -2)) * self.scaling
-            if attention_mask.dtype == torch.bool:
-                scores = scores.masked_fill(~attention_mask, float("-inf"))
-            else:
-                scores = scores + attention_mask
-            weights = scores.float().softmax(-1).nan_to_num().to(query.dtype)
+        positions = cache_position if cache_position is not None else torch.arange(k_len - q_len, k_len, device=query.device)
+        # A score tile (in FP32) is capped independently of sequence length.
+        # Broadcast the single latent head directly; do not repeat K/V 32 times.
+        budget = int(self.config.mla_score_budget_mb * 1024**2)
+        chunk = max(1, min(self.config.mla_query_chunk_size,
+                           budget // (4 * query.shape[0] * self.num_heads * k_len)))
+        if output_attentions and 4 * query.shape[0] * self.num_heads * q_len * k_len > budget:
+            raise ValueError("output_attentions exceeds the diagnostic score budget")
+        outputs, all_weights = [], []
+        key_positions = torch.arange(k_len, device=query.device)
+        for start in range(0, q_len, chunk):
+            stop = min(q_len, start + chunk)
+            allowed = key_positions[None, :] <= positions[start:stop, None]
+            scores = (query[..., start:stop, :] @ key.transpose(-1, -2)).float() * self.scaling
+            if attention_mask is not None:
+                if attention_mask.ndim == 2:
+                    allowed = allowed[None, None] & attention_mask[:, None, None, :k_len].bool()
+                elif attention_mask.ndim == 4:
+                    mask = attention_mask[..., :k_len]
+                    if mask.shape[-2] != 1:
+                        mask = mask[..., start:stop, :]
+                    if mask.dtype == torch.bool:
+                        allowed = allowed & mask
+                    else:
+                        scores = scores + mask.float()
+                        allowed = allowed & (mask > torch.finfo(mask.dtype).min)
+                else:
+                    raise ValueError("attention_mask must be a 2D padding or 4D attention mask")
+            scores = scores.masked_fill(~allowed, float("-inf"))
+            weights = scores.softmax(-1).nan_to_num().to(query.dtype)
             weights = F.dropout(weights, p=self.attention_dropout, training=self.training)
-            output = weights @ latent
-        else:
-            output = F.scaled_dot_product_attention(
-                query, key, latent, attn_mask=attention_mask,
-                scale=self.scaling, enable_gqa=True,
-                dropout_p=self.attention_dropout if self.training else 0.0,
-            )
+            outputs.append(weights @ latent)
+            if output_attentions:
+                all_weights.append(weights)
+        self.last_attention_backend = "chunked_latent"
+        self.last_score_tile_shape = (query.shape[0], self.num_heads, min(chunk, q_len), k_len)
+        output = torch.cat(outputs, dim=-2)
+        weights = torch.cat(all_weights, dim=-2) if output_attentions else None
         output = torch.einsum("bhtr,hdr->bthd", output, value_up)
         output = self.o_proj(output.flatten(-2))
         return output, weights
+
+    def _expanded_qkv(self, q_nope, q_rope, latent, k_rope, key_up, value_up):
+        query = torch.cat((q_nope, q_rope), -1)
+        key = torch.einsum("bstr,hdr->bhtd", latent, key_up)
+        key = torch.cat((key, k_rope.expand(-1, self.num_heads, -1, -1)), -1)
+        value = torch.einsum("bstr,hdr->bhtd", latent, value_up)
+        # Torch Flash SDPA requires equal Q/K/V dimensions. The padded output
+        # components are zero and are discarded; preserve the original scale.
+        return query, key, F.pad(value, (0, self.rope_dim))
+
+    def _flash_prefill(self, q_nope, q_rope, latent, k_rope, key_up, value_up,
+                       attention_mask, output_attentions):
+        if (self.config.mla_prefill_backend != "auto" or output_attentions
+                or self.config._attn_implementation == "eager"
+                or q_nope.device.type != "cuda" or q_nope.dtype not in (torch.float16, torch.bfloat16)
+                or q_nope.shape[-2] <= 1 or q_nope.shape[-2] != latent.shape[-2]
+                or self.head_dim + self.rope_dim > 256):
+            return None
+        if attention_mask is not None and (attention_mask.ndim != 2 or not bool(attention_mask.all())):
+            return None
+        from torch.backends.cuda import SDPAParams, can_use_flash_attention
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+        query, key, value = self._expanded_qkv(q_nope, q_rope, latent, k_rope, key_up, value_up)
+        dropout = self.attention_dropout if self.training else 0.0
+        if not can_use_flash_attention(SDPAParams(query, key, value, None, dropout, True, False)):
+            return None
+        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+            output = F.scaled_dot_product_attention(query, key, value, is_causal=True,
+                                                    scale=self.scaling, dropout_p=dropout)
+        self.last_attention_backend = "flash_expanded_prefill"
+        self.last_score_tile_shape = None
+        return output[..., :self.head_dim]
+
+
+class TransMLAModel(Qwen3Model):
+    def __init__(self, config):
+        super().__init__(config)
+        for index, layer in enumerate(self.layers):
+            layer.self_attn = TransMLAAttention(config, index)
+
+    def forward(self, input_ids=None, attention_mask=None, **kwargs):
+        # Keep the original 2D padding mask. HF's default mask builder can
+        # allocate a full Q x K tensor before attention has a chance to tile it.
+        if not isinstance(attention_mask, dict):
+            attention_mask = {"full_attention": attention_mask}
+        return super().forward(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
 
 
 class TransMLAForCausalLM(Qwen3ForCausalLM):
@@ -168,9 +248,10 @@ class TransMLAForCausalLM(Qwen3ForCausalLM):
     _supports_flex_attn = False
 
     def __init__(self, config):
-        super().__init__(config)
-        for index, layer in enumerate(self.model.layers):
-            layer.self_attn = TransMLAAttention(config, index)
+        Qwen3PreTrainedModel.__init__(self, config)
+        self.model = TransMLAModel(config)
+        self.vocab_size = config.vocab_size
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.post_init()
 
 

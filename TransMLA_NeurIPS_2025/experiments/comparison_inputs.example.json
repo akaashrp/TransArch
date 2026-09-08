@@ -1,0 +1,9 @@
+{
+  "description": "External comparator handoff. These rows are not silently substituted with unrelated checkpoints or submitted by the TransMLA launcher.",
+  "rows": [
+    {"family": "qwen3", "method": "swa", "source_revision": "1cfa9a7208912126459214e8b04321603b3df60c", "checkpoint_or_artifact": null, "code_revision": null, "window": null, "layer_mask": null, "protocol_manifest": null},
+    {"family": "mimo", "method": "swa", "source_revision": "323400599af3903adc2a536d6340a23fee88d2e0", "checkpoint_or_artifact": null, "code_revision": null, "window": null, "layer_mask": null, "protocol_manifest": null},
+    {"family": "qwen3", "method": "gdn_opd", "checkpoint_or_artifact": null, "checkpoint_revision": null, "training_tokens": null, "layer_mask": null, "protocol_manifest": null},
+    {"family": "mimo", "method": "gdn_opd", "checkpoint_or_artifact": null, "checkpoint_revision": null, "training_tokens": null, "layer_mask": null, "protocol_manifest": null}
+  ]
+}

@@ -82,7 +82,7 @@ def validate_conversion(config, freqfold, balance_kv_ratio):
 @torch.no_grad()
 def convert_model(model, calibration_batches, *, kv_lora_rank, qk_mqa_dim,
                   freqfold, q_lora_rank=None, balance_kv_ratio=1.0,
-                  source_model_type=None):
+                  source_model_type=None, stage_callback=None):
     """Convert an already loaded source in place, then wrap its shared weights.
 
 Using a meta-device wrapper avoids allocating a second full model. The returned
@@ -104,12 +104,16 @@ model is the canonical implementation for both export and cached inference.
         has_norm = hasattr(layer.self_attn, "q_norm") and hasattr(layer.self_attn, "k_norm")
         if has_norm != config.qk_norm_preserved:
             raise ValueError("Source attention normalization does not match the selected family")
+    if stage_callback:
+        stage_callback("source", model)
     activations = get_qkv_calibrate_outputs(model, batches, "Calibrating source Q/K/V")
     partial_cls = QKNormPartialRope if config.qk_norm_preserved else PartialRope
     for index, layer in enumerate(model.model.layers):
         layer.self_attn = partial_cls(layer.self_attn, activations["key"][index],
                                       freqfold=freqfold, collapse=config.collapse).eval()
     del activations
+    if stage_callback:
+        stage_callback("partial_rope", model)
     activations = get_qkv_calibrate_outputs(model, batches, "Calibrating partial-RoPE K/V")
     for index, layer in enumerate(model.model.layers):
         partial = layer.self_attn
@@ -138,6 +142,8 @@ model is the canonical implementation for both export and cached inference.
     exported.tie_weights()
     exported.generation_config = deepcopy(model.generation_config)
     exported.eval().requires_grad_(False)
+    if stage_callback:
+        stage_callback("converted", exported)
     return exported
 
 

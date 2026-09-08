@@ -35,6 +35,9 @@ It absorbs the non-RoPE key up-projection into queries and the value
 up-projection into the attention output. It retains the native query scaling.
 This backend supports logits and autoregressive generation; it is not a vLLM
 plugin, and a stock DeepSeek loader cannot interpret the Qwen3 adaptation.
+The experiment path adds fused expanded prefill and bounded query tiles for
+latent attention, avoiding full quadratic masks. See [EXPERIMENTS.md](EXPERIMENTS.md)
+for the prepared GPU validation and quality-evaluation jobs.
 Static/quantized caches, sliding-window sources, extended-context RoPE recipes,
 and distributed conversion are outside the supported path.
 

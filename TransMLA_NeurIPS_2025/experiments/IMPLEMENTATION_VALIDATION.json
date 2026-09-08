@@ -1,0 +1,365 @@
+{
+  "base_implementation_commit": "a3614a8",
+  "branch": "qwen3-mimo-conversion",
+  "code_sha256": "d9180a0d87efc1ea278279d4ff8470d953df19bd171f909183c9601c2012fa34",
+  "cpu_tests": [
+    {
+      "command": "bash scripts/test_experiments.sh",
+      "log": ".cache/test-experiments-final.log",
+      "passed": 31,
+      "scope": "Full CPU suite before final collector checks were added",
+      "seconds": 267.03
+    },
+    {
+      "command": "python -m pytest -q tests/test_experiment_support.py -k \"collector or collection\"",
+      "deselected": 15,
+      "log": ".cache/test-collector-final.log",
+      "passed": 4,
+      "scope": "Final collector changes, including two new context and checkpoint mismatch regressions",
+      "seconds": 140.28
+    }
+  ],
+  "data": {
+    "calibration_tokenization": {
+      "mimo": {
+        "file": "/ocean/projects/cis250162p/aparthas/TransMLA/TransMLA_NeurIPS_2025/.cache/experiment-data/calibration.jsonl",
+        "samples": 128,
+        "sha256": "3baefaf707623f74a42d325ea98ed02012d1682a2f286a75f7145e87acdde84a",
+        "tokens": 32412
+      },
+      "qwen3": {
+        "file": "/ocean/projects/cis250162p/aparthas/TransMLA/TransMLA_NeurIPS_2025/.cache/experiment-data/calibration.jsonl",
+        "samples": 128,
+        "sha256": "3baefaf707623f74a42d325ea98ed02012d1682a2f286a75f7145e87acdde84a",
+        "tokens": 32412
+      }
+    },
+    "harness_leaf_datasets": 63,
+    "manifest": ".cache/experiment-data/manifest.json",
+    "manifest_sha256": "2f770af58e79d277dc81c919fa606d658be1acb63700cffda14bbe6a02460014",
+    "prompt_context_preflight": {
+      "mimo": {
+        "aime24:True": {
+          "max_prompt_tokens": 436,
+          "native_context": 65536,
+          "output_cap": 32768
+        },
+        "aime25:True": {
+          "max_prompt_tokens": 811,
+          "native_context": 65536,
+          "output_cap": 32768
+        },
+        "math500:False": {
+          "max_prompt_tokens": 837,
+          "native_context": 65536,
+          "output_cap": 4096
+        },
+        "math500:True": {
+          "max_prompt_tokens": 834,
+          "native_context": 65536,
+          "output_cap": 32768
+        },
+        "niah_multikey": {
+          "native_context": 65536,
+          "output_cap": 128,
+          "prompt_tokens": 31242
+        },
+        "niah_multiquery": {
+          "native_context": 65536,
+          "output_cap": 128,
+          "prompt_tokens": 31243
+        },
+        "niah_single": {
+          "native_context": 65536,
+          "output_cap": 128,
+          "prompt_tokens": 31224
+        }
+      },
+      "qwen3": {
+        "aime24:True": {
+          "max_prompt_tokens": 416,
+          "native_context": 40960,
+          "output_cap": 32768
+        },
+        "aime25:True": {
+          "max_prompt_tokens": 791,
+          "native_context": 40960,
+          "output_cap": 32768
+        },
+        "math500:False": {
+          "max_prompt_tokens": 818,
+          "native_context": 40960,
+          "output_cap": 4096
+        },
+        "math500:True": {
+          "max_prompt_tokens": 814,
+          "native_context": 40960,
+          "output_cap": 32768
+        },
+        "niah_multikey": {
+          "native_context": 40960,
+          "output_cap": 128,
+          "prompt_tokens": 31223
+        },
+        "niah_multiquery": {
+          "native_context": 40960,
+          "output_cap": 128,
+          "prompt_tokens": 31224
+        },
+        "niah_single": {
+          "native_context": 40960,
+          "output_cap": 128,
+          "prompt_tokens": 31205
+        }
+      }
+    },
+    "sources": {
+      "aime24": {
+        "fingerprint": "ebdf141b0f00f517",
+        "repository": "HuggingFaceH4/aime_2024",
+        "revision": "2fe88a2f1091d5048c0f36abc874fb997b3dd99a",
+        "rows": 30,
+        "split": "train"
+      },
+      "aime25": {
+        "fingerprint": "ab082f64aec680b7",
+        "repository": "yentinglin/aime_2025",
+        "revision": "6f71d77b0b89b9dabe07ab466c51df33f514df7f",
+        "rows": 30,
+        "split": "train"
+      },
+      "calibration": {
+        "fingerprint": "5d4fb603254a7a5b",
+        "repository": "Salesforce/wikitext",
+        "revision": "b08601e04326c79dfdd32d625aee71d232d685c3",
+        "rows": 36718,
+        "split": "train"
+      },
+      "math500": {
+        "fingerprint": "f3124375297911ba",
+        "repository": "HuggingFaceH4/MATH-500",
+        "revision": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+        "rows": 500,
+        "split": "test"
+      },
+      "validation": {
+        "fingerprint": "51d84d52d095f90d",
+        "repository": "Salesforce/wikitext",
+        "revision": "b08601e04326c79dfdd32d625aee71d232d685c3",
+        "rows": 3760,
+        "split": "validation"
+      }
+    },
+    "verified_local_files": 635
+  },
+  "dependency_check": {
+    "lockfile": ".cache/evaluation-environment.txt",
+    "log": ".cache/evaluation-pip-check.txt",
+    "output": "No broken requirements found.",
+    "status": "passed"
+  },
+  "environment": {
+    "accelerate": "1.14.0",
+    "antlr4-python3-runtime": "4.13.2",
+    "datasets": "4.4.1",
+    "evaluate": "0.4.6",
+    "huggingface-hub": "0.35.0",
+    "latex2sympy2_extended": "1.10.2",
+    "lm_eval": "0.4.12",
+    "math-verify": "0.8.0",
+    "numpy": "2.2.6",
+    "peft": "0.20.0",
+    "safetensors": "0.6.2",
+    "sympy": "1.14.0",
+    "tokenizers": "0.22.0",
+    "torch": "2.8.0+cu129",
+    "transformers": "4.56.1"
+  },
+  "external_comparators": {
+    "gdn_opd": "Pending selected checkpoint and raw artifacts",
+    "swa": "Pending Anthony code and raw artifacts"
+  },
+  "full_size_gpu_validation": "not_run; required source and converted-model gates are the first campaign stages",
+  "optional_full_size_cpu_probe": {
+    "counts_as_passing_validation": false,
+    "exit_code": 137,
+    "log": ".cache/qwen-full-source-cpu.log",
+    "phase": "loading_checkpoint_shards",
+    "status": "terminated_before_completion"
+  },
+  "other_workstreams": "No Linearization files modified; notes.md excluded from scope",
+  "prepared_bundles": {
+    "main": {
+      "cpu_preflight": {
+        "gpu_validation": "not_run",
+        "scheduler_submission": "not_performed",
+        "sources": {
+          "mimo": {
+            "revision": "323400599af3903adc2a536d6340a23fee88d2e0",
+            "shards": 4,
+            "tensors": 451
+          },
+          "qwen3": {
+            "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+            "shards": 3,
+            "tensors": 398
+          }
+        },
+        "status": "passed_cpu_preflight"
+      },
+      "job_counts": {
+        "convert": 2,
+        "diagnostic": 4,
+        "full": 476,
+        "source": 2
+      },
+      "launcher": {
+        "collector": {
+          "missing_jobs": 476,
+          "scored_rows": 0,
+          "status": "partial",
+          "table_rows": 92
+        },
+        "preview_commands": [
+          "sbatch --parsable /ocean/projects/cis250162p/aparthas/TransMLA/TransMLA_NeurIPS_2025/experiments/prepared/main/source.sbatch",
+          "sbatch --parsable '--dependency=afterok:<source_job_id>' /ocean/projects/cis250162p/aparthas/TransMLA/TransMLA_NeurIPS_2025/experiments/prepared/main/convert.sbatch",
+          "sbatch --parsable '--dependency=afterok:<convert_job_id>' /ocean/projects/cis250162p/aparthas/TransMLA/TransMLA_NeurIPS_2025/experiments/prepared/main/diagnostic.sbatch",
+          "sbatch --parsable '--dependency=afterok:<diagnostic_job_id>' /ocean/projects/cis250162p/aparthas/TransMLA/TransMLA_NeurIPS_2025/experiments/prepared/main/full.sbatch"
+        ],
+        "preview_exit_code": 0,
+        "submitted": false
+      },
+      "plan": "experiments/prepared/main/plan.json"
+    },
+    "with-milder": {
+      "cpu_preflight": {
+        "gpu_validation": "not_run",
+        "scheduler_submission": "not_performed",
+        "sources": {
+          "mimo": {
+            "revision": "323400599af3903adc2a536d6340a23fee88d2e0",
+            "shards": 4,
+            "tensors": 451
+          },
+          "qwen3": {
+            "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+            "shards": 3,
+            "tensors": 398
+          }
+        },
+        "status": "passed_cpu_preflight"
+      },
+      "job_counts": {
+        "convert": 4,
+        "diagnostic": 6,
+        "full": 714,
+        "source": 2
+      },
+      "launcher": {
+        "collector": {
+          "missing_jobs": 714,
+          "scored_rows": 0,
+          "status": "partial",
+          "table_rows": 138
+        },
+        "preview_commands": [
+          "sbatch --parsable /ocean/projects/cis250162p/aparthas/TransMLA/TransMLA_NeurIPS_2025/experiments/prepared/with-milder/source.sbatch",
+          "sbatch --parsable '--dependency=afterok:<source_job_id>' /ocean/projects/cis250162p/aparthas/TransMLA/TransMLA_NeurIPS_2025/experiments/prepared/with-milder/convert.sbatch",
+          "sbatch --parsable '--dependency=afterok:<convert_job_id>' /ocean/projects/cis250162p/aparthas/TransMLA/TransMLA_NeurIPS_2025/experiments/prepared/with-milder/diagnostic.sbatch",
+          "sbatch --parsable '--dependency=afterok:<diagnostic_job_id>' /ocean/projects/cis250162p/aparthas/TransMLA/TransMLA_NeurIPS_2025/experiments/prepared/with-milder/full.sbatch"
+        ],
+        "preview_exit_code": 0,
+        "submitted": false
+      },
+      "plan": "experiments/prepared/with-milder/plan.json"
+    }
+  },
+  "quality_experiments": "not_run",
+  "recorded_at_utc": "2026-09-08T09:02:44.679125+00:00",
+  "scheduler_validation": {
+    "generated_script_hashes_match": true,
+    "mode": "sbatch --test-only",
+    "report": ".cache/scheduler-test-only.json",
+    "requests_passed": 8,
+    "submitted_jobs": 0,
+    "test_only_references_absent_from_squeue": true
+  },
+  "source_configuration_and_name_checks": [
+    {
+      "decoder_tensor_names": 399,
+      "ignored_mtp_tensor_names": 0,
+      "missing": [],
+      "model": "Qwen/Qwen3-4B",
+      "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+      "source_attention_width": 4096,
+      "source_head_dim": 128,
+      "source_hidden_size": 2560,
+      "unrecognized": [],
+      "validation": "configuration and tensor names only; no weights loaded"
+    },
+    {
+      "decoder_tensor_names": 435,
+      "ignored_mtp_tensor_names": 16,
+      "missing": [],
+      "model": "XiaomiMiMo/MiMo-7B-RL-0530",
+      "revision": "323400599af3903adc2a536d6340a23fee88d2e0",
+      "source_attention_width": 4096,
+      "source_head_dim": 128,
+      "source_hidden_size": 4096,
+      "unrecognized": [],
+      "validation": "configuration and tensor names only; no weights loaded"
+    }
+  ],
+  "source_weight_sha256_checks": [
+    {
+      "bytes": 3987958288,
+      "family": "mimo",
+      "file": "model-00001-of-00004.safetensors",
+      "sha256": "9b4d1566074fe7c7afaa396ba1eb95a34890b48a8433e89a19fa99c4b4c951db",
+      "verified": true
+    },
+    {
+      "bytes": 3989130384,
+      "family": "mimo",
+      "file": "model-00002-of-00004.safetensors",
+      "sha256": "06dde056e1e06ce66ab72b70da852f2a92ad6e2da4c99f5860b8273ad3dd0e0b",
+      "verified": true
+    },
+    {
+      "bytes": 3982835320,
+      "family": "mimo",
+      "file": "model-00003-of-00004.safetensors",
+      "sha256": "445637e4aa2cba64070751acaf06017ae29cd5cd57dfb479a3b1a5ee2c9897c5",
+      "verified": true
+    },
+    {
+      "bytes": 3706946944,
+      "family": "mimo",
+      "file": "model-00004-of-00004.safetensors",
+      "sha256": "1ea475d9ab1093ce5ceebf8852b828e1b7c9829351cfc911d24e0f1e4d778056",
+      "verified": true
+    },
+    {
+      "bytes": 3957900840,
+      "family": "qwen3",
+      "file": "model-00001-of-00003.safetensors",
+      "sha256": "328a91d3122359d5547f9d79521205bc0a46e1f79a792dfe650e99fc2d651223",
+      "verified": true
+    },
+    {
+      "bytes": 3987450520,
+      "family": "qwen3",
+      "file": "model-00002-of-00003.safetensors",
+      "sha256": "6cd087b316306a68c562436b5492edbcf6e16c6dba3a1308279caa5a58e21ca5",
+      "verified": true
+    },
+    {
+      "bytes": 99630640,
+      "family": "qwen3",
+      "file": "model-00003-of-00003.safetensors",
+      "sha256": "e4bf436957184f4eeb86a80e9db394503f1f56446b2e6b7edeac5b81470f4ca1",
+      "verified": true
+    }
+  ],
+  "status": "implementation_checked_and_experiments_prepared_not_submitted"
+}
