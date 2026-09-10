@@ -119,12 +119,17 @@ def run_likelihood(args, model, tok):
     result_path = Path(args.out) / "results.json"
     if result_path.exists():
         return
+    gsm8k = args.task == "gsm8k"
     wrapper = HFLM(pretrained=model, tokenizer=tok, batch_size=1,
-                   max_length=min(model.config.max_position_embeddings, 8192))
+                   max_length=min(model.config.max_position_embeddings, 8192),
+                   enable_thinking=False if gsm8k else None)
     with offline_harness_data(args.data):
         result = lm_eval.simple_evaluate(
-            model=wrapper, tasks=[args.task], num_fewshot=5 if args.task == "mmlu" else None,
-            gen_kwargs="max_gen_toks=1024,do_sample=False" if args.task == "gsm8k" else None,
+            model=wrapper, tasks=[args.task], num_fewshot=5 if args.task in ("mmlu", "gsm8k") else None,
+            gen_kwargs="max_gen_toks=1024,do_sample=False" if gsm8k else None,
+            # Keep the original five demonstrations in one user message;
+            # the native assistant prefix explicitly closes the think block.
+            apply_chat_template=gsm8k, fewshot_as_multiturn=False,
             limit=args.limit if args.limit else None, batch_size=1,
             log_samples=True, bootstrap_iters=1000, random_seed=0,
             numpy_random_seed=1234, torch_random_seed=1234, fewshot_random_seed=1234)
@@ -152,6 +157,8 @@ def parser():
 
 def main(argv=None):
     args = parser().parse_args(argv)
+    if args.task == "gsm8k" and args.thinking:
+        raise ValueError("GSM8K uses explicit no-thinking chat prompts")
     reasoning = args.task in protocol.MATH_TASKS or args.task.startswith("niah_")
     reasoning = reasoning and args.task != "gsm8k"
     if reasoning and args.limit <= 0:

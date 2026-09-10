@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import re
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -30,6 +31,19 @@ def tokenizer():
     tok = PreTrainedTokenizerFast(tokenizer_object=raw, pad_token="<pad>", eos_token="<eos>", unk_token="<unk>")
     tok.chat_template = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
     return tok
+
+
+@pytest.fixture
+def harness_task_subset():
+    import lm_eval
+    from lm_eval.tasks import TaskManager
+    task_root = Path(lm_eval.__file__).parent / "tasks"
+    manager = TaskManager(include_defaults=False,
+                          include_path=[task_root / "piqa", task_root / "gsm8k"])
+    # Retain the real upstream definitions without indexing unrelated suites
+    # on the shared filesystem for every small integration test.
+    with patch("lm_eval.evaluator.TaskManager", return_value=manager):
+        yield
 
 
 @pytest.mark.parametrize("family", ["qwen3", "mimo"])
@@ -137,7 +151,7 @@ def test_campaign_has_complete_disjoint_shards_and_no_implicit_submission(tmp_pa
 
 
 @torch.inference_mode()
-def test_actual_lm_eval_hf_backend_with_offline_staged_dataset(tmp_path):
+def test_actual_lm_eval_hf_backend_with_offline_staged_dataset(tmp_path, harness_task_subset):
     from datasets import Dataset, DatasetDict
     data = tmp_path / "data"
     rows = {"goal": ["hello", "world"], "sol1": ["hello", "world"],
@@ -150,6 +164,65 @@ def test_actual_lm_eval_hf_backend_with_offline_staged_dataset(tmp_path):
     result = json.loads((Path(args.out) / "results.json").read_text())
     assert result["status"] == "complete" and "piqa" in result["lm_eval"]["results"]
     assert len(result["lm_eval"]["samples"]["piqa"]) == 2
+
+
+@pytest.mark.parametrize("family", ["qwen3", "mimo"])
+@pytest.mark.parametrize("converted", [False, True], ids=["teacher", "transmla"])
+@torch.inference_mode()
+def test_gsm8k_harness_uses_native_no_thinking_prompts(tmp_path, family, converted, harness_task_subset):
+    from datasets import Dataset, DatasetDict
+    from huggingface_hub import snapshot_download
+    from lm_eval.models.huggingface import HFLM
+    from transformers import AutoTokenizer
+    from transmla.experiments.campaign import SOURCES
+
+    source = SOURCES[family]
+    directory = snapshot_download(source["repo"], revision=source["revision"], local_files_only=True)
+    tok = AutoTokenizer.from_pretrained(directory, local_files_only=True, trust_remote_code=True)
+    model = source_model(family)
+    if converted:
+        model = convert_model(model, batches(), kv_lora_rank=12, qk_mqa_dim=4,
+                              freqfold=2, source_model_type=family)
+        tok.save_pretrained(tmp_path / "exported-tokenizer")
+        tok = AutoTokenizer.from_pretrained(tmp_path / "exported-tokenizer", local_files_only=True)
+    model.config.max_position_embeddings = 8192
+    data = tmp_path / "data"
+    train = {"question": [f"Training question {i}: what is {i} + 1?" for i in range(7)],
+             "answer": [f"Add one.\n#### {i + 1}" for i in range(7)]}
+    test = {"question": ["Held-out question: what is 40 + 2?"], "answer": ["Add two.\n#### 42"]}
+    DatasetDict({"train": Dataset.from_dict(train), "test": Dataset.from_dict(test)}).save_to_disk(str(data / "gsm8k"))
+    atomic_json(data / "harness_registry.json", {digest(["openai/gsm8k", "main"]): {"directory": "gsm8k"}})
+    args = SimpleNamespace(out=str(tmp_path / "results"), data=str(data), task="gsm8k", limit=1, seed=0)
+    prompts = []
+
+    # Exercise real harness sampling, chat rendering, tokenization and scoring.
+    # Replace only model inference so this regression requires no full weights.
+    def controlled_generation(wrapper, context, max_length, stop, **kwargs):
+        prompt = wrapper.tokenizer.decode(context[0], skip_special_tokens=False)
+        assert wrapper.enable_thinking is False
+        assert max_length - context.shape[1] == 1024 and kwargs["do_sample"] is False
+        assert "Question:" in stop
+        assert prompt.count("Question:") == 6 and prompt.count("Training question") == 5
+        assert prompt.count("#### ") == 5 and "Held-out question: what is 40 + 2?" in prompt
+        assert prompt.count("<|im_start|>user\n") == 1
+        assert prompt.count("<|im_start|>assistant\n") == 1
+        assert re.search(r"<\|im_start\|>assistant\n<think>\s*</think>\s*$", prompt)
+        prompts.append(prompt)
+        answer = wrapper.tokenizer.encode("Add two.\n#### 42", add_special_tokens=False)
+        return torch.cat((context, torch.tensor([answer], device=context.device)), dim=1)
+
+    with patch.object(HFLM, "_model_generate", controlled_generation):
+        run_likelihood(args, model, tok)
+    report = json.loads((Path(args.out) / "results.json").read_text())["lm_eval"]
+    assert len(prompts) == 1 and report["configs"]["gsm8k"]["num_fewshot"] == 5
+    assert report["results"]["gsm8k"]["exact_match,strict-match"] == 1.0
+    assert report["results"]["gsm8k"]["exact_match,flexible-extract"] == 1.0
+
+
+def test_gsm8k_rejects_thinking_mode_before_loading():
+    from transmla.experiments.evaluate import main
+    with pytest.raises(ValueError, match="no-thinking"):
+        main(["--task", "gsm8k", "--model", "/unused", "--data", "/unused", "--out", "/unused", "--thinking"])
 
 
 def test_math_runner_reuses_results_without_regeneration(tmp_path):

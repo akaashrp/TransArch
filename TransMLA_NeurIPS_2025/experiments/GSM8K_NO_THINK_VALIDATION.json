@@ -1,0 +1,192 @@
+{
+  "all_gsm8k_prompt_preflight": {
+    "mimo": {
+      "all_prompts_close_think_block": true,
+      "enable_thinking": false,
+      "fewshot_as_multiturn": false,
+      "fewshot_seed": 1234,
+      "harness_context_limit": 8192,
+      "max_prompt_tokens": 1628,
+      "min_prompt_tokens": 641,
+      "model_inference": "not_run",
+      "num_fewshot": 5,
+      "output_cap": 1024,
+      "plain_fewshot_text_preserved": true,
+      "problems": 1319,
+      "prompts_sha256": "a4f539b4de0cc70835f94bf5a604675535886957fcc0d45852092f5c7f2480fa",
+      "source_revision": "323400599af3903adc2a536d6340a23fee88d2e0",
+      "truncated_prompts": 0
+    },
+    "qwen3": {
+      "all_prompts_close_think_block": true,
+      "enable_thinking": false,
+      "fewshot_as_multiturn": false,
+      "fewshot_seed": 1234,
+      "harness_context_limit": 8192,
+      "max_prompt_tokens": 1609,
+      "min_prompt_tokens": 622,
+      "model_inference": "not_run",
+      "num_fewshot": 5,
+      "output_cap": 1024,
+      "plain_fewshot_text_preserved": true,
+      "problems": 1319,
+      "prompts_sha256": "d96a5e2dabbede98ec37a15479faa1d6b9c318c39725fb89e92f1430391c98c1",
+      "source_revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+      "truncated_prompts": 0
+    }
+  },
+  "base_commit": "dec7418",
+  "branch": "qwen3-mimo-conversion",
+  "change": "GSM8K uses native chat templates with enable_thinking=False and the existing five-shot text in one user message",
+  "code_sha256": "aab0626b041682bab8be227fc63b244975e49fea56b165a052d8c2db9d6e61ed",
+  "environment": {
+    "accelerate": "1.14.0",
+    "antlr4-python3-runtime": "4.13.2",
+    "datasets": "4.4.1",
+    "evaluate": "0.4.6",
+    "huggingface-hub": "0.35.0",
+    "latex2sympy2_extended": "1.10.2",
+    "lm_eval": "0.4.12",
+    "math-verify": "0.8.0",
+    "numpy": "2.2.6",
+    "peft": "0.20.0",
+    "safetensors": "0.6.2",
+    "sympy": "1.14.0",
+    "tokenizers": "0.22.0",
+    "torch": "2.8.0+cu129",
+    "transformers": "4.56.1"
+  },
+  "full_size_gpu_validation": "not_run",
+  "initial_validation_record": "experiments/IMPLEMENTATION_VALIDATION.json",
+  "jobs_submitted": 0,
+  "prepared_bundles": {
+    "main": {
+      "code_sha256": "aab0626b041682bab8be227fc63b244975e49fea56b165a052d8c2db9d6e61ed",
+      "collector_status": "partial",
+      "cpu_preflight": {
+        "gpu_validation": "not_run",
+        "scheduler_submission": "not_performed",
+        "sources": {
+          "mimo": {
+            "revision": "323400599af3903adc2a536d6340a23fee88d2e0",
+            "shards": 4,
+            "tensors": 451
+          },
+          "qwen3": {
+            "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+            "shards": 3,
+            "tensors": 398
+          }
+        },
+        "status": "passed_cpu_preflight"
+      },
+      "dry_run_preview_passed": true,
+      "gsm8k_protocol": {
+        "apply_chat_template": true,
+        "do_sample": false,
+        "enable_thinking": false,
+        "fewshot_as_multiturn": false,
+        "fewshot_seed": 1234,
+        "max_new_tokens": 1024,
+        "num_fewshot": 5
+      },
+      "job_counts": {
+        "convert": 2,
+        "diagnostic": 4,
+        "full": 476,
+        "source": 2
+      },
+      "other_jobs_and_resources_unchanged": true,
+      "plan": "experiments/prepared/main/plan.json",
+      "previous_plan": "experiments/prepared/superseded-gsm8k-20260910/main/plan.json",
+      "shell_script_sha256": {
+        "convert.sbatch": "2498f5e72d8847b4fb43676ee79634f5a06f92dd43a8f98b64b4a007aaf7c6a2",
+        "diagnostic.sbatch": "eab99104ffeb45188439c247c59f594e68eccba490204decfacc5d957dcb53ea",
+        "full.sbatch": "3a4f9e15e49269d41ff7b013fcc7c784573ae384140b26d912fc15b8fc44dc6d",
+        "source.sbatch": "9f154c7453bc83af1b5c79f3a44b76dad3068440c2b53435ed161bf40ed2942e",
+        "submit.sh": "9ab48cb1a23f4bce5ab330ddfc5e67c03c1b74e2fc09cb11004e1abb1e2d4ce5"
+      },
+      "submitted": false
+    },
+    "with-milder": {
+      "code_sha256": "aab0626b041682bab8be227fc63b244975e49fea56b165a052d8c2db9d6e61ed",
+      "collector_status": "partial",
+      "cpu_preflight": {
+        "gpu_validation": "not_run",
+        "scheduler_submission": "not_performed",
+        "sources": {
+          "mimo": {
+            "revision": "323400599af3903adc2a536d6340a23fee88d2e0",
+            "shards": 4,
+            "tensors": 451
+          },
+          "qwen3": {
+            "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+            "shards": 3,
+            "tensors": 398
+          }
+        },
+        "status": "passed_cpu_preflight"
+      },
+      "dry_run_preview_passed": true,
+      "gsm8k_protocol": {
+        "apply_chat_template": true,
+        "do_sample": false,
+        "enable_thinking": false,
+        "fewshot_as_multiturn": false,
+        "fewshot_seed": 1234,
+        "max_new_tokens": 1024,
+        "num_fewshot": 5
+      },
+      "job_counts": {
+        "convert": 4,
+        "diagnostic": 6,
+        "full": 714,
+        "source": 2
+      },
+      "other_jobs_and_resources_unchanged": true,
+      "plan": "experiments/prepared/with-milder/plan.json",
+      "previous_plan": "experiments/prepared/superseded-gsm8k-20260910/with-milder/plan.json",
+      "shell_script_sha256": {
+        "convert.sbatch": "0580b83f621d5e832cc276fa2427d0481d818be4694d557b5142b60069665a72",
+        "diagnostic.sbatch": "79196abb057f92739676af8904ebb156861ec064acf072773a812653edba54b7",
+        "full.sbatch": "9d9c04b77d64145db6af4009949de0037cd3b479b56bd0f72838a1e8ccf9ae89",
+        "source.sbatch": "e0f5f40c684e2e3c799383a8b782a675911c802a0f7742aa3ea87613ad3ec1f5",
+        "submit.sh": "cb25c5f27fd5016fbe16968bbd7c957ce2e7f0363bb2db48c896c3540f52e3a9"
+      },
+      "submitted": false
+    }
+  },
+  "preserved_protocol": {
+    "do_sample": false,
+    "fewshot_seed": 1234,
+    "max_new_tokens": 1024,
+    "num_fewshot": 5,
+    "retrieval_lengths": [
+      4096,
+      8192,
+      16384,
+      32768
+    ],
+    "scoring": "lm_eval strict-match and flexible-extract"
+  },
+  "quality_experiments": "not_run",
+  "recorded_at_utc": "2026-09-10T04:34:41.734816+00:00",
+  "scheduler_checks": "Slurm scripts match the successful 2026-09-08 --test-only checks byte-for-byte; no new scheduler calls",
+  "status": "passed_cpu_validation_and_refreshed_unsubmitted_bundles",
+  "targeted_tests": {
+    "command": "python -m pytest -q tests/test_experiment_support.py -k \"gsm8k or actual_lm_eval or collector or collection or campaign or all_generated\"",
+    "coverage": [
+      "Native Qwen3 and MiMo tokenizers for teacher and converted tiny models",
+      "Exactly five demonstrations and a closed thinking block at the assistant prefix",
+      "1024 output-token cap, greedy generation arguments and strict/flexible GSM8K scoring",
+      "Existing real HF PIQA inference and collector/campaign regressions"
+    ],
+    "deselected": 12,
+    "gsm8k_inference": "Controlled completion replaces only HFLM._model_generate; real harness task loading, prompts, tokenization and scoring run",
+    "log": ".cache/test-gsm8k-final-20260910.log",
+    "passed": 12,
+    "seconds": 363.15,
+    "test_discovery": "Original PIQA and GSM8K task definitions; unrelated benchmark definitions omitted from the test index"
+  }
+}

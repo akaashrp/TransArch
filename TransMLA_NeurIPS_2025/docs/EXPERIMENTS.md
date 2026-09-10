@@ -4,10 +4,12 @@ Run from `TransMLA_NeurIPS_2025/` on branch `qwen3-mimo-conversion`.
 This campaign measures quality retention for Qwen3-4B and MiMo-7B-RL-0530.
 GPU validation and experiments are prepared as jobs; preparation submits none.
 
-The [preparation record](../experiments/IMPLEMENTATION_VALIDATION.json) contains
+The [initial preparation record](../experiments/IMPLEMENTATION_VALIDATION.json) contains
 the 31-test CPU suite result, four final collector checks, seven verified weight
 shards, both offline preflights and launcher previews, and eight successful
-Slurm `--test-only` checks. Full-size GPU validation and quality results are pending.
+Slurm `--test-only` checks. The [GSM8K update record](../experiments/GSM8K_NO_THINK_VALIDATION.json)
+documents the no-thinking prompt checks and refreshed launch bundles.
+Full-size GPU validation and quality results are pending.
 
 ## Launch the prepared campaign
 
@@ -89,7 +91,7 @@ source checkout. Evaluation runs independently of that checkout.
 | --- | --- |
 | PIQA, HellaSwag, ARC-Easy/Challenge, Winogrande | lm-eval 0.4.12, zero-shot, acc_norm where defined |
 | MMLU | lm-eval 0.4.12, five-shot, accuracy |
-| GSM8K | All 1,319 test examples, harness default five-shot, greedy, 1,024 output tokens, strict/flexible extraction |
+| GSM8K | All 1,319 test examples, five-shot, native no-thinking chat prompt, greedy, 1,024 output tokens, strict/flexible extraction |
 | MATH-500 thinking | 500 problems, one sample, T=0.6/p=0.95/k=20, 32,768 output tokens; 25 problems per shard |
 | MATH-500 no-thinking | Same 500, one sample, T=0.7/p=0.8/k=20, 4,096 output tokens; 25 per shard |
 | AIME24/25 | 30 each, eight samples per problem, thinking, T=0.6/p=0.95/k=20, 32,768 output tokens; five problems per shard |
@@ -105,8 +107,13 @@ The HF runner uses native chat templates and EOS settings, explicit sampling,
 and a stable seed per math problem. All eight AIME samples for a problem are
 generated together. Sampling trajectories are not expected to match vLLM.
 Teacher controls are rerun in the same HF path. Harness few-shot construction
-keeps seed 1234, matching the shared runner's defaults. Likelihood and GSM8K
-use the original plain harness prompts (no added chat-template layer).
+keeps seed 1234, matching the shared runner's defaults. Likelihood tasks use
+the original plain harness prompts. GSM8K places the unchanged five-shot
+question/answer text in one user message and applies the native chat template
+with `enable_thinking=False` for every teacher and TransMLA row. Its greedy
+decoding, 1,024-token output cap, stop strings and strict/flexible extraction
+remain the harness protocol. Earlier plain-prompt GSM8K results are a different
+protocol and cannot be resumed or mixed with these runs.
 
 All requested data is staged under `.cache/experiment-data/`, including the
 63 leaf tasks behind the seven harness entries. Dataset revisions, split
