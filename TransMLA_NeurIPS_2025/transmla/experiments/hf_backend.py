@@ -61,7 +61,9 @@ class HFGenerator:
         torch.manual_seed(seed)
         if self.model.device.type == "cuda":
             torch.cuda.manual_seed_all(seed)
-        output = self.model.generate(**inputs, generation_config=config)
+        # Transformers >=4.50 otherwise replaces explicit global-default
+        # values (including do_sample=False) with checkpoint-specific defaults.
+        output = self.model.generate(**inputs, generation_config=config, use_model_defaults=False)
         completions = [decode_completion(row[inputs.input_ids.shape[1]:], self.tokenizer, eos_ids,
                                           sampling.max_tokens) for row in output]
         if sampling.temperature == 0 and sampling.n > 1:

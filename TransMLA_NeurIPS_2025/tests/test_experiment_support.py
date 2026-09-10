@@ -117,6 +117,42 @@ def test_real_hf_generation_and_context_guard():
         gen.generate("hello", Sampling(max_tokens=129), 0)
 
 
+@pytest.mark.parametrize("converted", [False, True])
+@pytest.mark.parametrize("temperature", [0.0, 0.6])
+@torch.inference_mode()
+def test_generation_keeps_explicit_settings_over_model_defaults(converted, temperature):
+    model = source_model("qwen3")
+    if converted:
+        model = convert_model(model, batches(), kv_lora_rank=12, qk_mqa_dim=4, freqfold=2)
+    # Recent Transformers restores model defaults when an explicit value
+    # equals the global default, unless model-default fallback is disabled.
+    model.generation_config.update(do_sample=True, temperature=0.6, top_p=0.95,
+                                   top_k=20, repetition_penalty=1.3)
+    model.generation_config.transformers_version = "4.56.1"
+    original = model.generation_config.to_dict()
+    prepared = []
+    prepare = model._prepare_generation_config
+
+    def capture(*args, **kwargs):
+        result = prepare(*args, **kwargs)
+        prepared.append(result[0])
+        return result
+
+    sampling = Sampling(temperature=temperature, top_p=1.0, top_k=-1, max_tokens=3)
+    with patch.object(model, "_prepare_generation_config", side_effect=capture):
+        result = HFGenerator(model, tokenizer()).generate("hello world", sampling, 7)
+    assert len(prepared) == 1
+    actual = prepared[0]
+    assert actual.do_sample is (temperature > 0)
+    assert actual.temperature == (temperature if temperature > 0 else 1.0)
+    assert actual.top_p == 1.0 and actual.top_k == 0
+    assert actual.repetition_penalty == 1.0
+    assert actual.max_new_tokens == 3 and actual.num_return_sequences == 1
+    assert actual.eos_token_id == original["eos_token_id"]
+    assert result["eos_token_ids"] == [1]
+    assert model.generation_config.to_dict() == original
+
+
 def test_atomic_resume_rejects_changed_protocol(tmp_path):
     run = RunStore(tmp_path, {"model": "example", "cap": 128})
     run.put("0", {"complete": True})

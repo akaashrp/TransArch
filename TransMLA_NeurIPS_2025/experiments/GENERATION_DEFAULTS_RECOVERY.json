@@ -1,0 +1,23 @@
+{
+  "date": "2026-09-10",
+  "trigger": "Qwen3 source-validation log source-45679618_0.out reported that explicit generation settings were replaced by model defaults",
+  "affected_runtime": "transformers 4.56.1 GenerationMixin._prepare_generation_config",
+  "cause": "When a supplied GenerationConfig value equals the global default, Transformers can replace it with the checkpoint default. Qwen3 do_sample=False, temperature=1.0 and top_p=1.0 became True, 0.6 and 0.95.",
+  "fix": "Pass use_model_defaults=False to generate alongside the explicitly configured copy of the checkpoint generation config. Native token IDs are retained.",
+  "validation": {
+    "before_fix": "4 regression cases failed, covering teacher/converted models and greedy/sampled generation through the real Transformers generation path",
+    "before_log": ".cache/test-generation-defaults-before-20260910.log",
+    "after_command": "bash scripts/test_experiments.sh",
+    "after_result": "51 passed in 70.03s",
+    "after_log": ".cache/test-generation-defaults-fixed-20260910.log",
+    "gpu": "The prior source numerical gates passed on H100 for both models. The source gates will be rerun under the corrected implementation; CPU tests do not substitute for these gates."
+  },
+  "superseded_campaign": "experiments/prepared/main-cache-fix-20260910",
+  "superseded_source_job": "45679618",
+  "cancelled_downstream_jobs": ["45679619", "45679620", "45679621"],
+  "cancelled_job_elapsed": "00:00:00 for all three queued arrays",
+  "replacement_campaign": "experiments/prepared/main-generation-fix-20260910",
+  "replacement_source_sha256": "aa9580b10d7dddadb752f615e7195b9fa3ee2ea2a8a8ed712a330b75a0aa0649",
+  "plan_comparison": "Identical after normalizing campaign paths and source hash; same datasets, revisions, protocol, 2 source tasks, 2 conversions, 4 diagnostics, 476 evaluation tasks, and maximum 2 concurrent H100 GPUs",
+  "preflight": "passed_cpu_preflight"
+}
