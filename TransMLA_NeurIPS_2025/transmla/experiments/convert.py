@@ -12,7 +12,7 @@ import torch
 from ..convert_pretrained import calibration_data, code_provenance, convert_model
 from ..utils import evaluate_ppl
 from .common import atomic_json, checkpoint_identity, environment, file_hash, load_model
-from .validate import probe_tokens, require_gate, run_validation
+from .validate import export_reference, probe_tokens, require_gate, run_validation
 
 
 def main(argv=None):
@@ -60,8 +60,8 @@ def main(argv=None):
         tok.save_pretrained(work)
         with torch.inference_mode():
             ids = probe_tokens(tok, args.data)
-            logits = converted(ids.to(converted.device), use_cache=False).logits.cpu()
-        torch.save({"input_ids": ids, "logits": logits}, work / "validation_reference.pt")
+            reference = export_reference(converted, ids)
+        torch.save(reference, work / "validation_reference.pt")
         atomic_json(work / "conversion_report.json", {
             "request": requested, "source_model_type": family, "calibration": calibration,
             "validation": validation, "heldout_perplexity": diagnostics,

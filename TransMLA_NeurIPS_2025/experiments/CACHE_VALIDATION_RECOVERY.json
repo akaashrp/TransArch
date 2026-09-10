@@ -1,0 +1,280 @@
+{
+  "bf16_policy": "Cached/padded/fused logit drift is recorded, not asserted elementwise. Nonfinite values, incorrect cache dimensions, missing fused long-context prefill, native MiMo parity failure, and generation failure still fail the gate.",
+  "cpu_validation": {
+    "command": "python -m pytest -q tests/test_gpu_validation.py",
+    "elapsed_seconds": 9.77,
+    "log_sha256": "ad31b8166e589c765f8856a604a0ed060e57f14c332e4456c05dc7e1083b3626",
+    "result": "passed",
+    "tests": 9
+  },
+  "diagnosis_code_sha256": "aab0626b041682bab8be227fc63b244975e49fea56b165a052d8c2db9d6e61ed",
+  "diagnosis_job_id": "45678453",
+  "diagnosis_status": "completed",
+  "environment": {
+    "accelerate": "1.14.0",
+    "antlr4-python3-runtime": "4.13.2",
+    "datasets": "4.4.1",
+    "evaluate": "0.4.6",
+    "huggingface-hub": "0.35.0",
+    "latex2sympy2_extended": "1.10.2",
+    "lm_eval": "0.4.12",
+    "math-verify": "0.8.0",
+    "numpy": "2.2.6",
+    "peft": "0.20.0",
+    "safetensors": "0.6.2",
+    "sympy": "1.14.0",
+    "tokenizers": "0.22.0",
+    "torch": "2.8.0+cu129",
+    "transformers": "4.56.1"
+  },
+  "fixed_code_sha256": "b981c275e33aa0c16c54fa9d8903e66ff487ad7c5a932dcce168cb21c5041a82",
+  "fp32_gate": {
+    "atol": 0.002,
+    "attention": "math SDPA / chunked latent / expanded math oracle",
+    "rtol": 0.0001,
+    "tf32": false
+  },
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "models": {
+    "mimo": {
+      "bf16_auto": {
+        "cached": {
+          "max_abs": 0.421875,
+          "max_kl": 0.002537792082875967,
+          "mean_abs": 0.032048702239990234,
+          "original_tolerance_failure_fraction": 0.009109322912991047,
+          "rms": 0.043083686381578445,
+          "top1_agreement": 0.9999999403953552
+        },
+        "padded": {
+          "max_abs": 0.515625,
+          "max_kl": 0.0056839389726519585,
+          "mean_abs": 0.02693818509578705,
+          "original_tolerance_failure_fraction": 0.004686263855546713,
+          "rms": 0.03707638755440712,
+          "top1_agreement": 0.984375
+        },
+        "repeat": {
+          "max_abs": 0.0,
+          "max_kl": 0.0,
+          "mean_abs": 0.0,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 0.0,
+          "top1_agreement": 1.0
+        }
+      },
+      "bf16_full_reduction": {
+        "cached": {
+          "max_abs": 0.421875,
+          "max_kl": 0.002537792082875967,
+          "mean_abs": 0.032048702239990234,
+          "original_tolerance_failure_fraction": 0.009109322912991047,
+          "rms": 0.043083686381578445,
+          "top1_agreement": 0.9999999403953552
+        },
+        "padded": {
+          "max_abs": 0.515625,
+          "max_kl": 0.0056839389726519585,
+          "mean_abs": 0.02693818509578705,
+          "original_tolerance_failure_fraction": 0.004686263855546713,
+          "rms": 0.03707638755440712,
+          "top1_agreement": 0.984375
+        },
+        "repeat": {
+          "max_abs": 0.0,
+          "max_kl": 0.0,
+          "mean_abs": 0.0,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 0.0,
+          "top1_agreement": 1.0
+        }
+      },
+      "bf16_math": {
+        "cached": {
+          "max_abs": 0.53125,
+          "max_kl": 0.0065072872675955296,
+          "mean_abs": 0.032342374324798584,
+          "original_tolerance_failure_fraction": 0.009793434292078018,
+          "rms": 0.04341892898082733,
+          "top1_agreement": 0.9574467539787292
+        },
+        "padded": {
+          "max_abs": 0.0,
+          "max_kl": 0.0,
+          "mean_abs": 0.0,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 0.0,
+          "top1_agreement": 1.0
+        },
+        "repeat": {
+          "max_abs": 0.0,
+          "max_kl": 0.0,
+          "mean_abs": 0.0,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 0.0,
+          "top1_agreement": 1.0
+        }
+      },
+      "bf16_vs_fp32": {
+        "max_abs": 1.2188037633895874,
+        "max_kl": 0.021619081497192383,
+        "mean_abs": 0.0440501943230629,
+        "original_tolerance_failure_fraction": 0.035165831446647644,
+        "rms": 0.0636567696928978,
+        "top1_agreement": 0.96875
+      },
+      "fp32_math": {
+        "cached": {
+          "max_abs": 0.0007448196411132812,
+          "max_kl": 2.991539531649323e-07,
+          "mean_abs": 3.377733810339123e-05,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 4.676098978961818e-05,
+          "top1_agreement": 0.9999999403953552
+        },
+        "padded": {
+          "max_abs": 0.001491546630859375,
+          "max_kl": 3.199914999640896e-07,
+          "mean_abs": 5.899314419366419e-05,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 8.71500960784033e-05,
+          "top1_agreement": 1.0
+        },
+        "repeat": {
+          "max_abs": 0.0,
+          "max_kl": 0.0,
+          "mean_abs": 0.0,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 0.0,
+          "top1_agreement": 1.0
+        }
+      },
+      "native_fp32": {
+        "max_abs": 0.0,
+        "max_kl": 0.0,
+        "mean_abs": 0.0,
+        "original_tolerance_failure_fraction": 0.0,
+        "rms": 0.0,
+        "top1_agreement": 1.0
+      }
+    },
+    "qwen3": {
+      "bf16_auto": {
+        "cached": {
+          "max_abs": 0.5,
+          "max_kl": 0.020727038383483887,
+          "mean_abs": 0.047514334321022034,
+          "original_tolerance_failure_fraction": 0.020854104310274124,
+          "rms": 0.06354247033596039,
+          "top1_agreement": 0.9999999403953552
+        },
+        "padded": {
+          "max_abs": 0.5,
+          "max_kl": 0.007612547837197781,
+          "mean_abs": 0.04562831297516823,
+          "original_tolerance_failure_fraction": 0.021234165877103806,
+          "rms": 0.06133558228611946,
+          "top1_agreement": 1.0
+        },
+        "repeat": {
+          "max_abs": 0.0,
+          "max_kl": 0.0,
+          "mean_abs": 0.0,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 0.0,
+          "top1_agreement": 1.0
+        }
+      },
+      "bf16_full_reduction": {
+        "cached": {
+          "max_abs": 0.5,
+          "max_kl": 0.020727038383483887,
+          "mean_abs": 0.047514334321022034,
+          "original_tolerance_failure_fraction": 0.020854104310274124,
+          "rms": 0.06354247033596039,
+          "top1_agreement": 0.9999999403953552
+        },
+        "padded": {
+          "max_abs": 0.5,
+          "max_kl": 0.007612547837197781,
+          "mean_abs": 0.04562831297516823,
+          "original_tolerance_failure_fraction": 0.021234165877103806,
+          "rms": 0.06133558228611946,
+          "top1_agreement": 1.0
+        },
+        "repeat": {
+          "max_abs": 0.0,
+          "max_kl": 0.0,
+          "mean_abs": 0.0,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 0.0,
+          "top1_agreement": 1.0
+        }
+      },
+      "bf16_math": {
+        "cached": {
+          "max_abs": 0.5853271484375,
+          "max_kl": 0.0274193212389946,
+          "mean_abs": 0.04972510039806366,
+          "original_tolerance_failure_fraction": 0.030677668750286102,
+          "rms": 0.0674319937825203,
+          "top1_agreement": 0.9999999403953552
+        },
+        "padded": {
+          "max_abs": 0.0,
+          "max_kl": 0.0,
+          "mean_abs": 0.0,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 0.0,
+          "top1_agreement": 1.0
+        },
+        "repeat": {
+          "max_abs": 0.0,
+          "max_kl": 0.0,
+          "mean_abs": 0.0,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 0.0,
+          "top1_agreement": 1.0
+        }
+      },
+      "bf16_vs_fp32": {
+        "max_abs": 0.8970527648925781,
+        "max_kl": 0.027536220848560333,
+        "mean_abs": 0.046520113945007324,
+        "original_tolerance_failure_fraction": 0.03275402635335922,
+        "rms": 0.06665108352899551,
+        "top1_agreement": 0.984375
+      },
+      "fp32_math": {
+        "cached": {
+          "max_abs": 7.724761962890625e-05,
+          "max_kl": 1.4542146686835622e-07,
+          "mean_abs": 5.534766842174577e-06,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 7.506802830903325e-06,
+          "top1_agreement": 0.9999999403953552
+        },
+        "padded": {
+          "max_abs": 0.00032138824462890625,
+          "max_kl": 3.0588734034608933e-07,
+          "mean_abs": 9.37955246627098e-06,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 1.990563396248035e-05,
+          "top1_agreement": 1.0
+        },
+        "repeat": {
+          "max_abs": 0.0,
+          "max_kl": 0.0,
+          "mean_abs": 0.0,
+          "original_tolerance_failure_fraction": 0.0,
+          "rms": 0.0,
+          "top1_agreement": 1.0
+        }
+      }
+    }
+  },
+  "protocol_and_resources_unchanged": true,
+  "rank_1024_submitted": false,
+  "serialization": "BF16 weights are saved first; FP32 chunked before-save reference is compared with FP32 chunked reloaded logits.",
+  "validation_policy": "fp32-structural-bf16-runtime-v1"
+}

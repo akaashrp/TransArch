@@ -135,6 +135,7 @@ celerybeat.pid
 .venv
 .venv-eval/
 experiments/prepared/
+experiments/recovery/
 env/
 venv/
 ENV/

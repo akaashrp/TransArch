@@ -9,28 +9,30 @@ the 31-test CPU suite result, four final collector checks, seven verified weight
 shards, both offline preflights and launcher previews, and eight successful
 Slurm `--test-only` checks. The [GSM8K update record](../experiments/GSM8K_NO_THINK_VALIDATION.json)
 documents the no-thinking prompt checks and refreshed launch bundles.
-Full-size GPU validation and quality results are pending.
+Current GPU job states are recorded in the prepared bundle's
+`monitor/status.json`; the CPU validation records do not establish GPU success.
 
 ## Launch the prepared campaign
 
-The primary bundle is `experiments/prepared/main/`. The alternative bundle
-`experiments/prepared/with-milder/` additionally includes rank 1024 for each
-family. Choose one bundle: running both would duplicate teacher/rank-512 work.
+The current primary bundle is `experiments/prepared/main-cache-fix-20260910/`.
+`experiments/prepared/main/` retains the failed initial submission and its logs.
+The optional rank-1024 bundle must be regenerated with `--include-milder` in a
+fresh directory before use; its older prepared plan predates the validation fix.
 
 Preview the exact submission chain, including a fresh CPU artifact check:
 
 ```bash
-bash experiments/prepared/main/submit.sh
+bash experiments/prepared/main-cache-fix-20260910/submit.sh
 ```
 
 When ready to allocate GPUs and run the experiments:
 
 ```bash
-bash experiments/prepared/main/submit.sh --execute
+bash experiments/prepared/main-cache-fix-20260910/submit.sh --execute
 ```
 
-Only the explicit `--execute` path calls `sbatch`. There are no watchers,
-scheduled submissions, held jobs, or background launch agents. The launcher
+Only the explicit `--execute` path calls `sbatch`. The separate status monitor
+described below does not submit jobs. The launcher
 writes `submission.json` after each successful submission and refuses a second
 submission of the same bundle. Inspect that journal if submission is interrupted.
 
@@ -57,6 +59,51 @@ validation reports, checkpoint identity, code and environment.
 
 No full-model GPU result is implied by a successful CPU preflight. The full
 weight and long-context checks run in the first two stages after submission.
+
+## Session monitor
+
+The main campaign has a five-minute cron monitor installed on
+`br012.ib.bridges2.psc.edu`. It calls `scripts/monitor_campaign.py` with
+`experiments/prepared/main/monitor/config.json` and queues alerts through the
+installed `codex queue` command to session
+`01a07aaf-b487-7993-90ca-7acd747da7c4`.
+
+Alerts cover stage starts and completion, failed/cancelled/timed-out/OOM tasks,
+blocked dependencies, holds, and three consecutive scheduler/monitor errors.
+Events are grouped per check and deduplicated. Slurm accounting supplies
+completed tasks; the live queue takes precedence for running/requeued tasks.
+An array is complete only when every expected member is terminal. Missing
+queue entries alone do not establish success. No GPU is allocated by polling.
+
+`monitor/status.json` records the task states, `monitor/health.json` the latest
+poll health, and `monitor/alerts.jsonl` accepted alert deliveries. The
+installation and initial delivery check are recorded in
+`monitor/installation.json`. Alerts enter this session's native follow-up
+queue; automatic processing requires its Codex client to remain running.
+The cron watcher continues independently of the interactive shell.
+Monitor configuration and state stay under `main/monitor/` across campaign
+retries; the config's `bundle` field identifies the currently tracked submission.
+
+The monitor reads `submission.json` each time, so replacing the journal with
+a valid retry submission rearms it. When every tracked task is terminal it
+stops querying Slurm until the journal changes. If recovery uses a different
+prepared bundle, update `monitor/config.json` to its path. To pause alerts,
+create `experiments/prepared/main/monitor/disabled`; remove that file to resume.
+To uninstall, remove only the cron entry ending in
+`# transmla-monitor-01a07aaf-b487-7993-90ca-7acd747da7c4` using `crontab -e` on
+`br012`. Keep the monitor state and campaign artifacts for audit.
+
+Preview a current snapshot without sending alerts:
+
+```bash
+python3 scripts/monitor_campaign.py --config experiments/prepared/main/monitor/config.json --preview
+```
+
+Monitor-only tests use synthetic Slurm snapshots and do not submit jobs:
+
+```bash
+python3 scripts/test_monitor_campaign.py
+```
 
 ## Frozen protocol
 
@@ -131,10 +178,26 @@ to 64 query positions and a configurable 128 MiB FP32 score budget; no full
 sequence-by-sequence mask is created by the model. The total operation also
 uses linear-sized projections/cache, and temporary softmax buffers.
 
-The GPU conversion gate checks fused/latent parity, saved/reloaded logits,
-cached and padded decoding, actual latent cache dimensions, and prefill plus
-decode at 4K/8K/16K/32K. It requires the fused prefill path on the requested
-H100. Failure is reported before a full quality run is released.
+The GPU gate checks cached/padded logits and expanded-versus-latent prefill
+algebra in FP32 with TF32 disabled and math SDPA (`atol=0.002`, `rtol=0.0001`).
+The short export reference is computed after saving the BF16 weights, using
+FP32 chunked attention both before save/reload comparison sides. Generation,
+full evaluations, calibration, and exported weights remain BF16. The disposable
+validation model is promoted to FP32 only after its BF16 runtime checks.
+
+BF16 cached/padded/fused differences are recorded as maximum/RMS logit errors,
+KL divergence and argmax disagreement counts; they are not asserted to be
+elementwise equal. Nonfinite outputs still fail. The BF16 gate also checks
+native MiMo decoder parity, actual latent cache dimensions, HF generation, and
+prefill plus decode at 4K/8K/16K/32K. It requires the fused prefill path on H100.
+
+This replaces the original BF16 elementwise cache/padding assertion, which
+failed on the unmodified source models. H100 diagnostic job `45678453` found
+cache max errors of 0.500/0.422 in BF16 for Qwen3/MiMo, falling to
+0.000077/0.000745 in FP32. FP32 padded max errors were 0.000321/0.001492;
+native MiMo FP32 parity was exact. Fixed math SDPA and full BF16 reductions
+did not remove the BF16 cached differences. Details are in
+`experiments/recovery/cache-parity-20260910/diagnosis.json`.
 
 ```bash
 bash scripts/test_experiments.sh
