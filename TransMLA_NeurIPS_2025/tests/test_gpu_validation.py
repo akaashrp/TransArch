@@ -6,7 +6,9 @@ import torch
 
 from test_pretrained_conversion import source_model, batches
 from transmla.convert_pretrained import convert_model
-from transmla.experiments.validate import FP32_ATOL, FP32_RTOL, check_fp32_model, check_model, export_reference
+from transmla.experiments.validate import (
+    FP32_ATOL, FP32_RTOL, check_bf16_runtime, check_fp32_model, check_model, export_reference, run_validation,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -93,3 +95,39 @@ def test_runtime_diagnostics_still_reject_nonfinite_cache_logits():
         return output
     with patch.object(model, "forward", side_effect=corrupt), pytest.raises(ValueError, match="Nonfinite"):
         check_model(model, torch.randint(2, 41, (1, 64)), enforce_parity=False)
+
+
+@pytest.mark.parametrize("name", ["cached", "padded", "prefill"])
+def test_bf16_gate_rejects_large_distribution_drift(name):
+    report = {key: {"max_kl": 0.02} for key in ("cached", "padded", "prefill")}
+    # Actual failed MiMo prefill comparison, previously only recorded.
+    report[name]["max_kl"] = 0.6673276424407959
+    with pytest.raises(ValueError, match=f"BF16 {name}"):
+        check_bf16_runtime(report, converted=True)
+
+
+def test_bf16_gate_rejects_invalid_kl_and_missing_prefill():
+    report = {"cached": {"max_kl": 0.0}, "padded": {"max_kl": float("nan")}}
+    with pytest.raises(ValueError, match="BF16 padded"):
+        check_bf16_runtime(report)
+    report["padded"]["max_kl"] = 0.02
+    check_bf16_runtime(report)
+    with pytest.raises(KeyError, match="prefill"):
+        check_bf16_runtime(report, converted=True)
+
+
+def test_excessive_bf16_drift_cannot_write_a_passed_gpu_gate(tmp_path):
+    model_path = tmp_path / "model"
+    model_path.mkdir()
+    (model_path / "config.json").write_text('{"model_type": "transmla"}')
+    gate = tmp_path / "gate.json"
+    report = {"cached": {"max_kl": 0.0}, "padded": {"max_kl": 0.004},
+              "prefill": {"max_kl": 0.6673276424407959}}
+    with patch("torch.cuda.is_available", return_value=True), \
+            patch("torch.cuda.reset_peak_memory_stats"), \
+            patch("transmla.experiments.validate.load_model", return_value=(object(), object())), \
+            patch("transmla.experiments.validate.probe_tokens", return_value=torch.ones(1, 64)), \
+            patch("transmla.experiments.validate.check_model", return_value=(report, None)), \
+            pytest.raises(ValueError, match="BF16 prefill"):
+        run_validation(model_path, tmp_path, gate, "converted")
+    assert not gate.exists()

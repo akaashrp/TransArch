@@ -4,6 +4,7 @@ from contextlib import ExitStack, contextmanager
 from functools import partial
 import gc
 import json
+import math
 from pathlib import Path
 
 import torch
@@ -11,6 +12,7 @@ import torch
 from .common import atomic_json, checkpoint_identity, environment, load_model, source_hash
 
 FP32_ATOL, FP32_RTOL = 0.002, 0.0001
+BF16_MAX_KL = 0.1
 
 
 @contextmanager
@@ -62,6 +64,15 @@ def logit_diagnostics(actual, expected):
     return {"max_abs_error": delta.max().item(), "rms_error": delta.square().mean().sqrt().item(),
             "max_kl": (a.exp() * (a - b)).sum(-1).clamp_min(0).max().item(),
             "top1_disagreements": disagreements, "positions": positions}
+
+
+def check_bf16_runtime(report, converted=False):
+    """Reject excessive distribution drift, while allowing BF16 rounding noise."""
+    names = ("cached", "padded", "prefill") if converted else ("cached", "padded")
+    for name in names:
+        maximum = report[name]["max_kl"]
+        if not math.isfinite(maximum) or maximum > BF16_MAX_KL:
+            raise ValueError(f"BF16 {name} max KL {maximum} exceeds runtime limit {BF16_MAX_KL}")
 
 
 @torch.inference_mode()
@@ -138,7 +149,9 @@ def run_validation(model_path, data, out, kind, lengths=(4096, 8192, 16384, 3276
     raw = json.loads((Path(model_path) / "config.json").read_text())
     ids = probe_tokens(tok, data)
     report, reference = check_model(model, ids, converted=kind == "converted", enforce_parity=False)
-    report["bf16_comparisons"] = "finite runtime checks and recorded numerical drift; structural parity checked in FP32"
+    check_bf16_runtime(report, converted=kind == "converted")
+    report["bf16_comparisons"] = "finite runtime checks and bounded distribution drift; structural parity checked in FP32"
+    report["bf16_max_kl_limit"] = BF16_MAX_KL
     before_save = None
     if kind == "converted":
         before_save = torch.load(Path(model_path) / "validation_reference.pt", map_location="cpu", weights_only=True)
@@ -195,7 +208,7 @@ def run_validation(model_path, data, out, kind, lengths=(4096, 8192, 16384, 3276
         torch.testing.assert_close(fp32_reference, before_save["logits"].float(), atol=FP32_ATOL, rtol=FP32_RTOL)
         report["save_reload_max_abs_error"] = (fp32_reference - before_save["logits"].float()).abs().max().item()
         report["save_reload_dtype"] = "float32"
-    report["validation_policy"] = "fp32-structural-bf16-runtime-v1"
+    report["validation_policy"] = "fp32-structural-bf16-kl-v2"
     report.update(status="passed", kind=kind, checkpoint=checkpoint_identity(model_path),
                   code_sha256=source_hash(), environment=environment(),
                   gpu=torch.cuda.get_device_name(), peak_allocated_bytes=torch.cuda.max_memory_allocated())

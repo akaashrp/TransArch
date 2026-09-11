@@ -1,0 +1,41 @@
+{
+  "issue": "BF16 latent attention rounded the matrix of dot products before converting it to FP32. Large common score offsets could erase distinctions required by softmax.",
+  "fix": "Compute score products from FP32 operands with autocast disabled. Share the temporary FP32 key copy across heads and cast queries per score tile. Model weights, cached tensors and value-path computations remain BF16.",
+  "diagnosis_job": "45707808",
+  "diagnosis_result": "COMPLETED, exit 0, 13m11s on one H100",
+  "diagnosis_file": "experiments/recovery/prefill-parity-20260910/diagnosis.json",
+  "diagnosis_source_sha256": "aa9580b10d7dddadb752f615e7195b9fa3ee2ea2a8a8ed712a330b75a0aa0649",
+  "probe": "64 held-out validation tokens per saved converted model; no benchmark outcomes used",
+  "max_kl_against_full_fp32_reference": {
+    "mimo": {
+      "old_latent_bf16": 1.210237979888916,
+      "fp32_score_products": 0.011796567589044571,
+      "flash_bf16_control": 0.007644861005246639
+    },
+    "qwen3": {
+      "old_latent_bf16": 0.024036819115281105,
+      "fp32_score_products": 0.015569121576845646,
+      "flash_bf16_control": 0.01665602996945381
+    }
+  },
+  "validation_policy": {
+    "id": "fp32-structural-bf16-kl-v2",
+    "bf16_max_per_token_kl": 0.1,
+    "comparisons": ["cached", "padded", "expanded prefill versus latent attention"],
+    "purpose": "Reject large runtime distribution drift; this is not a benchmark quality threshold",
+    "retained": "Strict FP32 cache/padding/expanded algebra and save/reload checks, native MiMo parity, finite outputs, latent cache dimensions, generation, and H100 fused prefill/decode at 4K/8K/16K/32K"
+  },
+  "cpu_validation": {
+    "before_fix": "4 constant-score-shift invariance regressions failed, covering one/two-query tiles with and without autocast",
+    "before_log": ".cache/test-score-precision-before-20260910.log",
+    "after_command": "bash scripts/test_experiments.sh",
+    "after_result": "60 passed in 75.61s",
+    "after_log": ".cache/test-score-precision-fixed-20260910.log",
+    "gate_regressions": "Reject excessive or invalid BF16 KL and missing prefill results; excessive drift cannot write a passed GPU gate"
+  },
+  "replacement_campaign": "experiments/prepared/main-score-fix-20260910",
+  "replacement_source_sha256": "8e388470c55fc388027a84f1bca4e06acd9c017f444530b16a210b54fe27f779",
+  "plan_comparison": "Only campaign paths and code hash changed. Same sources, data, protocol, 2 source tasks, 2 conversions, 4 diagnostics, 476 evaluation tasks and maximum 2 concurrent H100 GPUs.",
+  "preflight": "passed_cpu_preflight",
+  "gpu_release": "Replacement exports must pass the strengthened GPU gates before full evaluation"
+}

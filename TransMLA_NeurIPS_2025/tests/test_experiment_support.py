@@ -95,6 +95,41 @@ def test_real_attention_dimensions_expanded_equals_absorbed():
     torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-5)
 
 
+@pytest.mark.parametrize("chunk", [1, 2])
+@pytest.mark.parametrize("autocast", [False, True])
+@torch.inference_mode()
+def test_bf16_attention_preserves_constant_score_shift(chunk, autocast):
+    cfg = TransMLAConfig(hidden_size=2, intermediate_size=4, num_hidden_layers=1,
+                         num_attention_heads=1, num_key_value_heads=1, head_dim=2,
+                         kv_lora_rank=2, qk_mqa_dim=2, qk_norm_preserved=False,
+                         mla_query_chunk_size=chunk, mla_prefill_backend="chunked")
+    cfg._attn_implementation = "sdpa"
+    attn = TransMLAAttention(cfg, 0).eval().bfloat16()
+    identity = torch.eye(2, dtype=torch.bfloat16)
+    attn.kv_b_proj.weight.copy_(torch.cat((identity, identity)))
+    attn.o_proj.weight.copy_(identity)
+    query = torch.tensor([[[[1, 0], [1, 0]]]], dtype=torch.bfloat16)
+    latent = identity[None, None]
+    hidden = torch.zeros(1, 2, 2, dtype=torch.bfloat16)
+    cos, sin = torch.ones_like(hidden), torch.zeros_like(hidden)
+
+    def run(offset):
+        rope = torch.tensor([[[[offset, 0], [offset, 0]]]], dtype=torch.bfloat16)
+        with patch.object(attn, "project", return_value=(query, rope, latent, rope)), \
+                torch.autocast("cpu", dtype=torch.bfloat16, enabled=autocast):
+            return attn(hidden, (cos, sin), output_attentions=True)
+
+    baseline, baseline_weights = run(0)
+    # Adding a common 16384 to all unscaled scores must not change softmax.
+    # Rounding scores to BF16 before softmax incorrectly erases the 1-point
+    # difference between the two keys, making the second query uniform.
+    shifted, shifted_weights = run(128)
+    assert baseline_weights[0, 0, 1, 0] > 0.6
+    torch.testing.assert_close(shifted_weights, baseline_weights, atol=0, rtol=0)
+    torch.testing.assert_close(shifted, baseline, atol=0, rtol=0)
+    assert shifted.dtype == torch.bfloat16
+
+
 def test_completion_eos_and_length_are_distinct():
     tok = tokenizer()
     stopped = decode_completion(torch.tensor([3, 1, 0, 0]), tok, {1}, 4)

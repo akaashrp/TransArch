@@ -176,7 +176,10 @@ the value width to use Torch Flash SDPA at head width 192. Decode and masked
 or unsupported prefill use tiled latent attention. Score tiles are limited
 to 64 query positions and a configurable 128 MiB FP32 score budget; no full
 sequence-by-sequence mask is created by the model. The total operation also
-uses linear-sized projections/cache, and temporary softmax buffers.
+uses linear-sized projections/cache, and temporary softmax buffers. Latent
+score products use FP32 operands with autocast disabled; casting an already
+rounded BF16 score matrix to FP32 loses distinctions needed by softmax. The
+temporary FP32 key copy is shared across heads; the stored cache stays BF16.
 
 The GPU gate checks cached/padded logits and expanded-versus-latent prefill
 algebra in FP32 with TF32 disabled and math SDPA (`atol=0.002`, `rtol=0.0001`).
@@ -187,7 +190,9 @@ validation model is promoted to FP32 only after its BF16 runtime checks.
 
 BF16 cached/padded/fused differences are recorded as maximum/RMS logit errors,
 KL divergence and argmax disagreement counts; they are not asserted to be
-elementwise equal. Nonfinite outputs still fail. The BF16 gate also checks
+elementwise equal. Each cached/padded/prefill comparison must have maximum
+per-token KL at most 0.1; nonfinite outputs or KL also fail. This is a runtime
+numerical gate, not a benchmark quality threshold. The BF16 gate also checks
 native MiMo decoder parity, actual latent cache dimensions, HF generation, and
 prefill plus decode at 4K/8K/16K/32K. It requires the fused prefill path on H100.
 
@@ -198,6 +203,12 @@ cache max errors of 0.500/0.422 in BF16 for Qwen3/MiMo, falling to
 native MiMo FP32 parity was exact. Fixed math SDPA and full BF16 reductions
 did not remove the BF16 cached differences. Details are in
 `experiments/recovery/cache-parity-20260910/diagnosis.json`.
+
+H100 diagnosis `45707808` isolated an additional BF16 latent-score rounding
+error: on the converted MiMo probe, FP32 score products reduced maximum KL
+against the full FP32 reference from 1.2102 to 0.0118. The BF16 drift limit
+above rejects the former path mismatch. See
+`experiments/PREFILL_PRECISION_RECOVERY.json` for the controls and regression checks.
 
 ```bash
 bash scripts/test_experiments.sh

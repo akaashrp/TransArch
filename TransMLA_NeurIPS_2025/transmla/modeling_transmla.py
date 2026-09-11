@@ -163,10 +163,14 @@ class TransMLAAttention(nn.Module):
             raise ValueError("output_attentions exceeds the diagnostic score budget")
         outputs, all_weights = [], []
         key_positions = torch.arange(k_len, device=query.device)
+        score_key = key.transpose(-1, -2).float()
         for start in range(0, q_len, chunk):
             stop = min(q_len, start + chunk)
             allowed = key_positions[None, :] <= positions[start:stop, None]
-            scores = (query[..., start:stop, :] @ key.transpose(-1, -2)).float() * self.scaling
+            # Casting a BF16 matmul result is too late: large common score
+            # offsets can already have erased the differences softmax needs.
+            with torch.autocast(device_type=query.device.type, enabled=False):
+                scores = (query[..., start:stop, :].float() @ score_key) * self.scaling
             if attention_mask is not None:
                 if attention_mask.ndim == 2:
                     allowed = allowed[None, None] & attention_mask[:, None, None, :k_len].bool()
