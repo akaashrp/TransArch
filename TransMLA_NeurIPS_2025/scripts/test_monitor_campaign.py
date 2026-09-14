@@ -61,6 +61,53 @@ class MonitorTests(unittest.TestCase):
         self.assertTrue(terminal)
         self.assertTrue(any("103_475: CANCELLED" in v for v in events.values()))
 
+    def test_pool_progress_preserves_completed_results_and_rejects_wrong_plan(self):
+        cache = Path(__file__).resolve().parents[1] / '.cache' / 'monitor-tests'
+        cache.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=cache) as temporary:
+            root = Path(temporary)
+            (root / 'states').mkdir()
+            (root / 'pool.json').write_text(json.dumps({'plan_sha256': 'abc', 'workers': 8,
+                'indices': [28, 29], 'completed_before_pool': 28, 'total_chunks': 30}))
+            (root / 'states/0028.json').write_text(json.dumps({'status': 'complete'}))
+            (root / 'states/0029.json').write_text(json.dumps({'status': 'failed'}))
+            override = {'pool': str(root), 'task_count': 8}
+            progress = monitor.pool_progress(override, 'abc')
+            self.assertEqual(progress['completed_chunks'], 29)
+            self.assertEqual(progress['unfinished_chunks'], 1)
+            self.assertEqual(progress['failed_chunks'], [29])
+            with self.assertRaises(ValueError):
+                monitor.pool_progress(override, 'wrong')
+
+    def test_pool_override_counts_allocations_and_reports_unfinished_chunks(self):
+        cache = Path(__file__).resolve().parents[1] / '.cache' / 'monitor-tests'
+        cache.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=cache) as temporary:
+            root = Path(temporary)
+            plan = {'jobs': {s: [None] * n for s, n in self.counts.items()}}
+            plan_hash = monitor.hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
+            (root / 'plan.json').write_text(json.dumps(plan))
+            (root / 'submission.json').write_text(json.dumps({'jobs': self.jobs, 'plan_sha256': plan_hash}))
+            pool = root / 'pool'
+            (pool / 'states').mkdir(parents=True)
+            (pool / 'pool.json').write_text(json.dumps({'plan_sha256': plan_hash, 'workers': 2,
+                'indices': list(range(28, 476)), 'completed_before_pool': 28, 'total_chunks': 476}))
+            config = {'bundle': str(root), 'sacct': 'sacct', 'squeue': 'squeue', 'thread_id': 'test-thread',
+                'interval_seconds': 300, 'accounting_start': '2026-09-09',
+                'stage_overrides': {'full': {'job_id': '200', 'task_count': 2, 'pool': str(pool)}}}
+            accounting = '\n'.join(f'{self.jobs[s]}_{i}|COMPLETED|0:0'
+                for s in ['source', 'convert', 'diagnostic'] for i in range(self.counts[s]))
+            accounting += '\n103_[28-475]|CANCELLED|0:0\n200_[0-1]|COMPLETED|0:0'
+            with patch.object(monitor, 'command', side_effect=lambda args: accounting if args[0] == 'sacct' else ''), \
+                    patch.object(monitor, 'send', return_value='Queued message test for thread test-thread.'):
+                monitor.poll(config, root)
+            status = json.loads((root / 'status.json').read_text())
+            self.assertEqual(status['stages']['full']['expected_tasks'], 2)
+            self.assertEqual(status['stages']['full']['states'], {'COMPLETED': 2})
+            self.assertEqual(status['evaluation_progress']['completed_chunks'], 28)
+            self.assertIn('pool:200:incomplete', status['delivered_events'])
+            self.assertFalse(any('103_' in k for k in status['records']))
+
     def test_failed_delivery_retries_and_success_deduplicates(self):
         cache = Path(__file__).resolve().parents[1] / ".cache" / "monitor-tests"
         cache.mkdir(parents=True, exist_ok=True)

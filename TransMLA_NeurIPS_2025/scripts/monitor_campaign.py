@@ -139,16 +139,43 @@ def auxiliary_events(auxiliary, records):
     return summaries, events
 
 
+def pool_progress(override, plan_hash):
+    directory = Path(override['pool'])
+    manifest = json.loads((directory / 'pool.json').read_text())
+    if manifest['plan_sha256'] != plan_hash or manifest['workers'] != override['task_count']:
+        raise ValueError('Consolidated pool does not match this campaign')
+    completed, failed = 0, []
+    for index in manifest['indices']:
+        path = directory / 'states' / f'{index:04d}.json'
+        if not path.exists():
+            continue
+        state = json.loads(path.read_text())
+        if state['status'] == 'complete':
+            completed += 1
+        elif state['status'] == 'failed':
+            failed.append(index)
+    return {'total_chunks': manifest['total_chunks'],
+            'completed_chunks': manifest['completed_before_pool'] + completed,
+            'unfinished_chunks': len(manifest['indices']) - completed,
+            'failed_chunks': failed, 'pool': str(directory)}
+
+
 def poll(config, directory, preview=False, baseline=False):
     bundle = Path(config["bundle"])
     journal = json.loads((bundle / "submission.json").read_text())
-    jobs = journal["jobs"]
+    jobs = dict(journal["jobs"])
     plan = json.loads((bundle / "plan.json").read_bytes())
     plan_hash = hashlib.sha256(json.dumps(plan, sort_keys=True, default=str).encode()).hexdigest()
     if plan_hash != journal["plan_sha256"]:
         raise ValueError("Submitted plan hash changed; monitor cannot infer expected array sizes")
     counts = {k: len(v) for k, v in plan["jobs"].items()}
-    identity = hashlib.sha256(json.dumps(journal, sort_keys=True).encode()).hexdigest()
+    overrides = config.get('stage_overrides', {})
+    for stage, override in overrides.items():
+        if stage != 'full' or override['task_count'] < 1 or not override['job_id'].isdigit():
+            raise ValueError('Invalid execution stage override')
+        jobs[stage], counts[stage] = override['job_id'], override['task_count']
+    identity_source = {**journal, 'stage_overrides': overrides} if overrides else journal
+    identity = hashlib.sha256(json.dumps(identity_source, sort_keys=True).encode()).hexdigest()
     state_path = directory / "state.json"
     previous = json.loads(state_path.read_text()) if state_path.exists() else {}
     if previous.get("identity") != identity:
@@ -167,6 +194,12 @@ def poll(config, directory, preview=False, baseline=False):
     records = {task: record for task, record in parse_records(accounting, queue).items()
                if task.split("_", 1)[0] in ids}
     summaries, events, terminal = summarize(jobs, counts, records)
+    progress = pool_progress(overrides['full'], plan_hash) if overrides else None
+    if progress:
+        for index in progress['failed_chunks']:
+            events[f'pool:{jobs["full"]}:chunk:{index}:failed'] = f'Evaluation chunk {index} failed in consolidated pool; inspect {progress["pool"]}/logs.'
+        if terminal and progress['unfinished_chunks']:
+            events[f'pool:{jobs["full"]}:incomplete'] = f'GPU workers finished with {progress["unfinished_chunks"]} evaluation chunks unfinished; campaign results are incomplete.'
     extra_summaries, extra_events = auxiliary_events(auxiliary, records)
     events.update(extra_events)
     terminal = terminal and all(r["state"] in TERMINAL for r in extra_summaries.values())
@@ -181,8 +214,10 @@ def poll(config, directory, preview=False, baseline=False):
               "records": records, "unknown_polls": unknown_polls, "all_terminal": terminal,
               "delivered_events": sorted(seen), "poll_interval_seconds": config["interval_seconds"],
               "auxiliary_jobs": auxiliary, "auxiliary_states": extra_summaries}
+    if progress:
+        status['evaluation_progress'] = progress
     if preview:
-        print(json.dumps({"stages": summaries, "auxiliary_states": extra_summaries,
+        print(json.dumps({"stages": summaries, "auxiliary_states": extra_summaries, 'evaluation_progress': progress,
                           "new_events": fresh, "all_terminal": terminal}, indent=2))
         return
     if baseline:
@@ -207,6 +242,8 @@ def poll(config, directory, preview=False, baseline=False):
                    "Investigate failures within the existing TransMLA task authorization. "
                    "Preserve validation gates and experiment scope. This monitor submits no jobs. "
                    "It remains installed; do not reinstall it or send another delivery test.")
+        if progress:
+            message += f"\nEvaluation progress: {progress['completed_chunks']}/{progress['total_chunks']} chunks complete. Pool logs: {progress['pool']}/logs."
         acknowledgement = send(config, message)
         with (directory / "alerts.jsonl").open("a") as stream:
             stream.write(json.dumps({"at": now(), "events": fresh, "acknowledgement": acknowledgement}) + "\n")

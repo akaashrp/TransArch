@@ -14,7 +14,7 @@ Current GPU job states are recorded in the prepared bundle's
 
 ## Launch the prepared campaign
 
-The current primary bundle is `experiments/prepared/main-cache-fix-20260910/`.
+The current primary bundle is `experiments/prepared/main-score-fix-20260910/`.
 `experiments/prepared/main/` retains the failed initial submission and its logs.
 The optional rank-1024 bundle must be regenerated with `--include-milder` in a
 fresh directory before use; its older prepared plan predates the validation fix.
@@ -22,13 +22,13 @@ fresh directory before use; its older prepared plan predates the validation fix.
 Preview the exact submission chain, including a fresh CPU artifact check:
 
 ```bash
-bash experiments/prepared/main-cache-fix-20260910/submit.sh
+bash experiments/prepared/main-score-fix-20260910/submit.sh
 ```
 
 When ready to allocate GPUs and run the experiments:
 
 ```bash
-bash experiments/prepared/main-cache-fix-20260910/submit.sh --execute
+bash experiments/prepared/main-score-fix-20260910/submit.sh --execute
 ```
 
 Only the explicit `--execute` path calls `sbatch`. The separate status monitor
@@ -59,6 +59,42 @@ validation reports, checkpoint identity, code and environment.
 
 No full-model GPU result is implied by a successful CPU preflight. The full
 weight and long-context checks run in the first two stages after submission.
+
+## Consolidated evaluation allocations
+
+The original launcher maps each evaluation chunk to an individual Slurm task.
+For an already validated campaign, `scripts/run_evaluation_pool.py` instead
+distributes unfinished chunks across reusable GPU allocations. It preserves
+the original plan, output paths, model code hash, numerical gates, seeds, and
+sample coverage. Preparation validates all source/converted/diagnostic gates
+and existing results before identifying unfinished work; it submits no jobs.
+
+```bash
+source scripts/eval_env.sh
+"$TRANSMLA_PYTHON" scripts/run_evaluation_pool.py prepare \
+  --plan experiments/prepared/main-score-fix-20260910/plan.json \
+  --out experiments/prepared/main-score-fix-20260910/pool-new --workers 8
+# Run this command once per allocated GPU, all pointing at the same pool:
+"$TRANSMLA_PYTHON" scripts/run_evaluation_pool.py worker \
+  --pool experiments/prepared/main-score-fix-20260910/pool-new/pool.json
+```
+
+Use a shared filesystem supporting `flock`. Each worker dynamically claims a
+chunk, invokes the unchanged gated campaign worker, verifies the result, then
+takes more work. The GPU allocation remains active across chunks. Evaluation
+subprocesses and model loads remain separate to preserve the tested execution
+path; this change removes per-chunk scheduler allocations, not all startup cost.
+An interrupted chunk retains item checkpoints. A failed chunk is recorded and
+not retried automatically; other available chunks continue. Inspect failures
+and prepare a fresh pool for unfinished work after correcting their cause.
+If an allocation times out, the monitor reports it; the pool never submits its
+own replacement jobs. Do not run the old full array alongside the pool.
+
+The monitor accepts a `stage_overrides.full` entry with `job_id`, `task_count`,
+and `pool` (the pool directory). It tracks actual worker allocations separately
+from `evaluation_progress` out of all 476 chunks. Original submission journals
+remain unchanged. Pool manifests, per-chunk logs/states, and submission records
+are stored alongside the original campaign, without modifying its frozen plan.
 
 ## Session monitor
 
